@@ -4,11 +4,11 @@
 ![Bash](https://img.shields.io/badge/bash-%23121011.svg?style=for-the-badge&logo=gnu-bash&logoColor=white)
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
-> A multi-process blockchain simulation built for the Operating Systems course (2026).
+> A multi-process blockchain simulation developed for the Operating Systems course (A.Y. 2025/2026) within the Bachelor's Degree in Information, Communications and Electronics Engineering at the University of Trento.
 
 ## 👥 The Team
 * [Pietro Gelmini](https://github.com/Gelminaio)
-* Andrei Marious Smedoiu
+* [Andrei Marious Smedoiu](https://github.com/Andr3pny)
 * Nicola Fait
 
 ## 🚀 Overview
