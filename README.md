@@ -9,7 +9,7 @@
 ## 👥 The Team
 * [Pietro Gelmini](https://github.com/Gelminaio)
 * [Andrei Marious Smedoiu](https://github.com/Andr3pny)
-* Nicola Fait
+* [Nicola Fait](https://github.com/NicolaFait05)
 
 ## 🚀 Overview
 This project simulates a fully functional blockchain system using distinct OS processes. It features:
