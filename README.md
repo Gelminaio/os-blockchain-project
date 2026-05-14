@@ -9,7 +9,7 @@ A multi-process blockchain simulation developed for the Operating Systems course
 ## Authors
 
 - [Pietro Gelmini](https://github.com/Gelminaio)
-- [Andrei Marious Smedoiu](https://github.com/Andr3pny)
+- [Andrei Marius Smedoiu](https://github.com/smedoiuandrei)
 - [Nicola Fait](https://github.com/NicolaFait05)
 
 ## Overview
