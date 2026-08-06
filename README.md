@@ -14,22 +14,22 @@ A multi-process blockchain simulation developed for the Operating Systems course
 
 ## Overview
 
-The system simulates a blockchain network composed of three concurrent process types that cooperate through inter-process communication:
+The system simulates a blockchain network of three concurrent process types that share no memory and cooperate only by exchanging messages:
 
-- **Nodes** maintain a local copy of the chain, validate incoming blocks, gossip them to peers, and persist the chain to disk.
-- **Miners** assemble candidate blocks from pending transactions and simulate a proof-of-work loop, broadcasting successfully mined blocks to all nodes.
+- **Nodes** keep a local copy of the chain, validate incoming blocks, gossip them to peers, and persist the chain to disk.
+- **Miners** assemble candidate blocks from pending transactions and run a simulated proof-of-work loop, broadcasting mined blocks to all nodes.
 - **Clients** generate transactions at a configurable frequency and submit them to miners.
 
-The project explores the core challenges of UNIX systems programming: process orchestration, concurrent IPC, signal-based control flow, and consistency across independent processes that share no memory.
+A parent process bootstraps the network and hosts an interactive command line.
 
 ### Key design choices
 
-- **Inter-process communication**: POSIX message queues for the data plane (transactions, blocks, gossip).
-- **Control flow**: POSIX signals for the control plane (`SIGUSR1` to abort mining, `SIGSTOP`/`SIGCONT` for pause/resume, `SIGTERM` for graceful shutdown).
-- **Consensus**: deterministic tiebreak rule on block hash to guarantee convergence across all nodes without coordination.
-- **Cryptography**: SHA-256 via OpenSSL's `libcrypto`.
+- **IPC**: one named pipe (FIFO) per process for the data plane. Messages are fixed-size records kept under `PIPE_BUF`, so every write is atomic and arrives whole even with multiple senders.
+- **Control flow**: POSIX signals for the control plane — `SIGUSR1` to abort mining, `SIGSTOP`/`SIGCONT` for pause/resume, `SIGTERM` for graceful shutdown.
+- **Consensus**: a deterministic tiebreak on the block hash, which makes all nodes converge on the same chain without any coordinator.
+- **Cryptography**: SHA-256 implemented from scratch (FIPS 180-4), so the project builds on a clean Ubuntu with no external libraries.
 
-Detailed design rationale is provided in `report.pdf`.
+Full design rationale is in `report.pdf`.
 
 ## Repository structure
 
@@ -39,62 +39,53 @@ Detailed design rationale is provided in `report.pdf`.
 ├── README.md
 ├── LICENSE
 └── code/
-    ├── Makefile            Build system: build, clean, run targets
+    ├── Makefile            Build system: build, clean, run
     ├── blockchain.sh       Bash entry point: --verify, --hash, --merkle
-    ├── include/            C public headers (errors, config, common,
-    │                       crypto, block, transaction, ipc, logging, cli)
-    ├── src/                C source files: shared modules and the four
-    │                       executable entry points (main, node, miner, client)
-    ├── scripts/            Bash implementations of the blockchain.sh
-    │                       subcommands and shared error codes
-    ├── bin/                Executables produced by `make build`
+    ├── include/            C headers (errors, config, common, crypto,
+    │                       block, transaction, ipc, logging, cli)
+    ├── src/                Shared modules and the four program entry
+    │                       points (main, node, miner, client)
+    ├── scripts/            Bash implementations behind blockchain.sh,
+    │                       plus the shared error codes
+    ├── tests/              Sample chain files used to exercise --verify
+    ├── fifo/               Named pipes, created at startup
     └── logs/               Per-process runtime logs (role-PID.log)
 ```
 
 ## Build and run
 
-The project targets Ubuntu 24.04 and requires `gcc`, `make`, `libcrypto` (OpenSSL), and POSIX message queue support (`librt`).
-
-### Build
+Targets Ubuntu 24.04. Requires only `gcc` and `make` — no external libraries.
 
 ```bash
 cd code
 make build
 ```
 
-This compiles the shared modules and produces four executables under `bin/`:
+This produces four executables: `blockchain` (bootstrap program and CLI host) and `node`, `miner`, `client` (the role-specific children).
 
-- `blockchain` — the bootstrapping program and CLI host
-- `node`, `miner`, `client` — the role-specific child programs
-
-### Run a default scenario
+### Running
 
 ```bash
-make run
+make run                      # default scenario
+make run ARGS="3 5 10 1 12"   # custom arguments
 ```
 
-Or with custom arguments:
-
-```bash
-make run ARGS="3 5 10 1 12"
-```
-
-The arguments match the bootstrapping program's signature:
+The arguments match the bootstrap program's signature:
 
 ```
-./bin/blockchain <num_nodes> <num_miners> <num_clients> \
-                 [transaction_frequency] [difficulty] [initial_state.csv]
+./blockchain <num_nodes> <num_miners> <num_clients> \
+             [transaction_frequency] [difficulty] [initial_state.csv]
 ```
 
-Once the system is running, the CLI accepts the following commands:
+Once running, the CLI accepts:
 
 - `submit "Alice pays Bob 10 coins"` — submit a transaction
-- `request blockchain [--index <i> | --hash <h>]` — query the current chain
+- `request blockchain [--index <i> | --hash <h>]` — query the chain
 - `request block --index <i>` or `--hash <h>` — query a single block
 - `save blockchain <filename>` — persist the chain to a CSV file
-- `pause` / `resume` / `stop` — control the lifecycle of all child processes
+- `pause` / `resume` / `stop` — control all child processes
 
-### Standalone blockchain utilities
+### Standalone utilities
 
 ```bash
 ./blockchain.sh --hash <block_hex>
@@ -108,7 +99,7 @@ Once the system is running, the CLI accepts the following commands:
 make clean
 ```
 
-Removes all compiled artifacts, log files, and any leftover IPC resources (POSIX message queues under `/dev/mqueue/`).
+Removes compiled artifacts, logs, saved chain files, and the `fifo/` directory with any leftover named pipes.
 
 ## License
 
