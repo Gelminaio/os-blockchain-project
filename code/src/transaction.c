@@ -69,6 +69,8 @@ int transaction_generate_random(char *out, size_t cap) {
     if (written<0 || (size_t)written>=cap) {
         return INVALID_TRANSACTION;
     }
+
+    return OK;
 }
 
 void transaction_cleanup(void) {
