@@ -14,7 +14,7 @@ static int fd = -1;
 static char log_role[20];
 static pid_t pid;
 
-int log_init(const char *role){
+int log_init(const char *role) {
     int result = mkdir(LOG_DIR, 0755); //755 -> read/write/execute for the creator, read/execute for the others
     
     if (result != 0 && errno != EEXIST) { //if there is an error and the error is not "folder already exists"
@@ -36,7 +36,7 @@ int log_init(const char *role){
     return OK;
 }
 
-void log_msg(log_level_t level, const char *msg){
+void log_msg(log_level_t level, const char *msg) {
     if(fd < 0) return; //if log_msg called before log_init
     time_t t = time(NULL);
     struct tm *tmp = localtime(&t);
@@ -65,7 +65,7 @@ void log_msg(log_level_t level, const char *msg){
     }
 }
 
-void log_close(void){
+void log_close(void) {
     if(fd >= 0){
         close(fd);
         fd = -1;
