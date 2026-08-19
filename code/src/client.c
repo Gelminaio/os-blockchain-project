@@ -4,6 +4,7 @@
 #include <time.h>
 #include <string.h>
 #include <errno.h>
+#include "common.h"
 #include "transaction.h"
 #include "errors.h"
 #include "config.h"
