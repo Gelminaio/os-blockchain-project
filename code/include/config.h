@@ -20,6 +20,7 @@
 #define BOOTSTRAP_CSV "bootstrap.csv"
 #define HASH_HEX_LEN 64
 #define HEX16_LEN 16
+#define MAX_PATH_LEN 256
 #define CSV_HEADER "index,timestamp,prev_hash,merkle_root,nonce,transactions"
 
 #endif

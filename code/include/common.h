@@ -3,6 +3,9 @@
 
 #include "config.h"
 #include <stdint.h>
+#include <sys/types.h>
+#include <signal.h>
+#include <stddef.h>
 
 typedef char hex64_t[HASH_HEX_LEN + 1];
 typedef char hex16_t[HEX16_LEN + 1];
@@ -17,5 +20,21 @@ typedef struct {
     uint32_t payload_len;
     char payload[MSG_PAYLOAD_MAX];
 } msg_t;
+
+typedef struct {
+    pid_t pid;
+    role_t role;
+    int idx;
+    volatile sig_atomic_t alive;
+} proc_t;
+
+typedef struct {
+    int num_nodes;
+    int num_miners;
+    int num_clients;
+    int transaction_frequency;
+    int difficulty;
+    char initial_state[MAX_PATH_LEN];
+} params_t;
 
 #endif
