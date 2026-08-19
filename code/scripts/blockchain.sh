@@ -6,6 +6,7 @@ source scripts/errors.sh
 
 [[ $# -eq 2 ]] || {
   echo "Uso: $0 --verify|--hash|--merkle <arg>" >&2
+
   exit "$ARGS_ERROR"
 }
 
@@ -21,6 +22,7 @@ case "$1" in
     ;;
   *)
     echo "Operazione non valida" >&2
+
     exit "$ARGS_ERROR"
     ;;
 esac
