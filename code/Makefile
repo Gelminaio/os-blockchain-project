@@ -1,10 +1,10 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -Iinclude
 
-# moduli che servono a tutti e quattro gli eseguibili
+# modules required by all four executables
 COMMON = src/crypto.o src/block.o src/transaction.o src/ipc.o src/logging.o
 
-# se cambia un header vanno ricompilati gli oggetti
+# if a header changes, the objects must be recompiled
 HEADERS = include/errors.h include/config.h include/common.h \
           include/crypto.h include/block.h include/transaction.h \
           include/ipc.h include/logging.h include/cli.h
@@ -12,8 +12,8 @@ HEADERS = include/errors.h include/config.h include/common.h \
 OBJS = $(COMMON) src/main.o src/cli.o src/node.o src/miner.o src/client.o
 BINS = blockchain node miner client
 
-# scenario di default, si cambia con: make run ARGS="1 1 1"
-ARGS ?= 3 2 3
+# default values, can be changed with: make run ARGS="1 1 1"
+ARGS ?= 3 2 3 # ?= means assign only if not already defined
 
 build: $(BINS)
 

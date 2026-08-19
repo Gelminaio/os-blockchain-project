@@ -76,7 +76,7 @@ int hex16_to_u64(const char *in, uint64_t *out){
 }
 
 /*Valori iniziali dello stato da FIPS 180-4 */
-static const uint32_t H[8] = {
+static const uint32_t H_INIT[8] = {
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
 };
@@ -101,6 +101,11 @@ static const uint32_t K[64] = {
 /*calcola l'hash SHA-256 di qualsiasi dato*/
 int sha256_hex(const void *data, size_t len, char out[65]){
    
+    uint32_t H[8];
+    for(int i = 0; i < 8; i++){
+        H[i] = H_INIT[i];
+    }
+
     uint64_t msg_len_bits = (uint64_t)len * 8; // calcolo quanto era lungo il messggio in bit
     size_t padded_len = len + 1 + 8; // aggiungo 1 byte per il bit di padding e 8 byte per la lunghezza del messaggio
 
@@ -121,17 +126,31 @@ int sha256_hex(const void *data, size_t len, char out[65]){
     // aggiungo il bit di padding 
     padded_msg[len] = 0x80; // 0x80 è 10000000
 
+    uint32_t W[64]; // array di 64 parole da 32 bit
+
     // mettoo la lunghezza in bit negli ultimi 8 byte alla fine
     for (int i = 0; i < 8; i++) {
         padded_msg[padded_len - 1 - i] = (uint8_t)(msg_len_bits >> (i * 8));
     }
 
-    uint32_t W[64]; // array di 64 parole da 32 bit
-
     for(int i = 0; i < 16; i++){
         // copio i primi 16 blocchi di 32 bit dal messaggio
         W[i] = ((uint32_t)(padded_msg[i * 4] << 24) | (uint32_t)(padded_msg[i * 4 + 1] << 16) | (uint32_t)(padded_msg[i * 4 + 2] << 8) | (uint32_t)(padded_msg[i * 4 + 3]));
     }
+
+    /* GEMINI CONSIGLIA COSì CON L'OFFSET, MA NON SONO D'ACCORDO
+    
+    IL CAPOTRENO (OFFSET) CHE SCORRE I VAGONI DA 64 BYTE
+    for (size_t offset = 0; offset < padded_len; offset += 64) {
+        uint32_t W[64]; 
+
+        for(int i = 0; i < 16; i++){
+            W[i] = ((uint32_t)(padded_msg[offset + i * 4]     << 24) | 
+                    (uint32_t)(padded_msg[offset + i * 4 + 1] << 16) | 
+                    (uint32_t)(padded_msg[offset + i * 4 + 2] << 8)  | 
+                    (uint32_t)(padded_msg[offset + i * 4 + 3]));
+        }
+    */
 
     // Genero le 48 parole rimanenti usando le funzioni sigma
     for(int i = 16; i < 64; i++){
@@ -150,8 +169,8 @@ int sha256_hex(const void *data, size_t len, char out[65]){
 
     // CICLO DI COMPRESSIONE
     for(int i = 0; i < 64; i++){
-        uint32_t T1 = h + Sigma1(e) + Ch(e, f, g) + K[i] + W[i];
-        uint32_t T2 = Sigma0(a) + Maj(a, b, c);
+        uint32_t T1 = h + SIGMA1_maj(e) + ch(e, f, g) + K[i] + W[i];
+        uint32_t T2 = SIGMA0_maj(a) + maj(a, b, c);
 
         // AGGIORNAMENTO DELLE VARIABILI DI STATO
         h = g;
@@ -164,16 +183,17 @@ int sha256_hex(const void *data, size_t len, char out[65]){
         a = T1 + T2;
 
         // AGGIORNAMENTO HASH INTERMEDIO
-        H[0] += a;
-        H[1] += b;
-        H[2] += c;
-        H[3] += d;
-        H[4] += e;
-        H[5] += f;
-        H[6] += g;
-        H[7] += h;
+    
 
     }
+    H[0] += a;
+    H[1] += b;
+    H[2] += c;
+    H[3] += d;
+    H[4] += e;
+    H[5] += f;
+    H[6] += g;
+    H[7] += h;
      /* ========================================================================
          CONVERSIONE DELL'HASH IN STRINGA ESADECIMALE
       ==========================================================================
@@ -186,6 +206,8 @@ int sha256_hex(const void *data, size_t len, char out[65]){
     free(padded_msg); // libero la memoria allocata per il messaggio
      return OK; // ritorno OK
     
+}
+    
 
 /*calcola la radice di Merkle di un blocco di transizioni*/
 int merkle_root(const char *const *txs, size_t n, char out[65]){
@@ -197,25 +219,67 @@ int merkle_root(const char *const *txs, size_t n, char out[65]){
     }
 
     // ALLOCAZIONE DINAMICA MEMORIA --> MALLOC
-    char (*Livello_A)[65] = malloc(n * sizeof(*Livello_A));
-    char (*Livello_B)[65] = malloc(n * sizeof(*Livello_B));
+    char (*Livello_read)[65] = malloc(n * sizeof(*Livello_read));
+    char (*Livello_write)[65] = malloc(n * sizeof(*Livello_write));
 
     // CONTROLLO SE IL PC HA RAMM, SENNò ESCO CON ERRORE
-    if(Livello_A == NULL || Livello_B == NULL){
-        free(Livello_A);
-        free(Livello_B);
+    if(Livello_read == NULL || Livello_write == NULL){
+        free(Livello_read);
+        free(Livello_write);
         return INVALID_BLOCK;
     }
     
-
     // CREAZIONE DUE PUNTATORI PER SCAMBIARE I TAVOLI ALLA FINE DI OGNI LIVELLO
-    char(*tavolo_lettura)[65] = Livello_A;
-    char(*tavolo_scrittura)[65] = Livello_B;
+    char(*tavolo_lettura)[65] = Livello_read;
+    char(*tavolo_scrittura)[65] = Livello_write;
 
     // FASE INIZIALE: CALCOLO HASH DELLE FOGLIE
     for(size_t i = 0; i < n; i++){
         sha256_hex(txs[i], strlen(txs[i]), tavolo_lettura[i]);
     }
+
+    // CASO DIPARI: PREPARO STRINGA VUOTA
+    char hash_vuoto[65];
+    sha256_hex("", 0, hash_vuoto);
+
+    size_t livello_corrente = n; // numero di foglie
+
+    while(livello_corrente > 1){
+        size_t next_level = 0;
+
+        for(size_t i = 0; i < livello_corrente; i += 2){
+            
+            char combined_buffer[129]; // due hash concatenati + terminatore nullo
+            
+            if(i + 1 < livello_corrente){
+            
+                sprintf(combined_buffer, "%s%s", tavolo_lettura[i], tavolo_lettura[i + 1]);
+
+            }else{
+                    sprintf(combined_buffer, "%s%s", tavolo_lettura[i], hash_vuoto);
+
+                }
+
+            // calcolo hash combinato per il livello succesivo
+            sha256_hex(combined_buffer, 128, tavolo_scrittura[next_level]);
+            next_level++;
+        }
+            
+
+        livello_corrente = next_level;
+        char(*temp_ptr)[65] = tavolo_lettura;
+        tavolo_lettura = tavolo_scrittura;
+        tavolo_scrittura = temp_ptr;
+
+    }
+
+     strcpy(out, tavolo_lettura[0]); // copio la radice di Merkle nell'output
+    
+    //deallocazione risorse dianamiche
+    free(Livello_read);
+    free(Livello_write);
+    return OK; // ritorno OK
+
 }
 
 

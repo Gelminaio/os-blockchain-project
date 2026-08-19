@@ -1,13 +1,13 @@
 //
 // Created by faitn on 09/08/2026.
 //
-#include "../include/transaction.h"
-#include "../include/errors.h"
+#include "transaction.h"
+#include "errors.h"
 #include <string.h>
 #include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "../include/config.h"
+#include "config.h"
 
 #define PATTERN "^[A-Za-z0-9]+ pays [A-Za-z0-9]+ [1-9][0-9]* coins$"
 
@@ -15,6 +15,11 @@ static regex_t re;
 static int initialized = 0;
 
 int transaction_init(void) {
+
+    if (initialized) {
+        return OK;
+    }
+
     if (regcomp(&re, PATTERN, REG_EXTENDED | REG_NOSUB) !=0) {
         return SYS_ERROR;
     }
@@ -56,11 +61,19 @@ static void random_name(char *buf, size_t cap) {
 }
 
 int transaction_generate_random(char *out, size_t cap) {
-    char mittente[16];
-    char destinatario[16];
+    static const char *nomi[] = {
+        "Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan", "Judy"
+    };
+    int n_nomi = sizeof(nomi)/sizeof(nomi[0]);
+    int idx1 = random()%n_nomi;
+    int idx2 = random()%n_nomi;
 
-    random_name(mittente, sizeof(mittente));
-    random_name(destinatario, sizeof(destinatario));
+    if (idx1==idx2) {
+        idx2 = (idx1+1)%n_nomi;
+    }
+
+    const char *mittente = nomi[idx1];
+    const char *destinatario = nomi[idx2];
 
     int importo = 1+random()%999;
 
