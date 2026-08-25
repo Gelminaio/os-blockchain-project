@@ -1,0 +1,14 @@
+# objects produced by compilation
+*.o
+
+# executables produced by make build
+blockchain
+node
+miner
+client
+
+# things generated at runtime
+logs/
+fifo/
+bootstrap.csv
+chain-node-*.csv
