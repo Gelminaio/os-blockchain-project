@@ -19,7 +19,7 @@ int ipc_unlink_all(int n_nodi, int n_miner);
 
 // apertura delle comunicazioni
 int ipc_open_inbox(role_t role, int idx, int nonblock, int *fd);
-int ipc_open_sender(role_t role, int idx, int nonblock, int *fd);
+int ipc_open_sender(role_t role, int idx, int *fd);
 
 
 // lettura e scrittura di messaggi
