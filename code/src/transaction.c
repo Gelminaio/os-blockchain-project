@@ -15,7 +15,6 @@ static regex_t re;
 static int initialized = 0;
 
 int transaction_init(void) {
-
     if (initialized) {
         return OK;
     }
