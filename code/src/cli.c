@@ -46,7 +46,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             snprintf(log_buf, sizeof(log_buf), "Error opening FIFO to the miner %d", j);
             log_msg(LOG_ERROR, log_buf);
             for (int k = 0; k < j; k++) {
-                close(fd_miner[clik]);
+                close(fd_miner[k]);
             }
             return IPC_ERROR;
         }

@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 source scripts/errors.sh
 
 [[ $# -eq 2 ]] || {
-  echo "Uso: $0 --verify|--hash|--merkle <arg>" >&2
+  echo "Usage: $0 --verify|--hash|--merkle <arg>" >&2
 
   exit "$ARGS_ERROR"
 }

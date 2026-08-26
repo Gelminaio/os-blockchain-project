@@ -3,7 +3,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
-#include <errno.h>
 #include "common.h"
 #include "config.h"
 #include "errors.h"
@@ -410,7 +409,7 @@ int main(int argc, char *argv[]) {
         int r = ipc_recv(g_inbox, &m);
 
         if (r != OK) {
-            if (errno == EINTR) continue;
+            if (r == IPC_INTR) continue;
             log_msg(LOG_ERROR, "Error receiving the message");
             continue;
         }

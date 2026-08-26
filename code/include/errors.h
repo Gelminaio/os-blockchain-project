@@ -12,6 +12,9 @@
 #define CSV_PARSE_ERROR 21
 #define FILE_ERROR 22
 #define ARGS_ERROR 23
+#define IPC_EMPTY 24
+#define IPC_INTR 25
+#define IPC_TIMEOUT 26
 #define SYS_ERROR 30
 
 #endif
