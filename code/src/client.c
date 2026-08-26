@@ -13,7 +13,7 @@
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        fprintf(stderr, "Uso: %s <idx> <num_miner> <freq_transazioni>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <idx> <num_miner> <tx_freq>\n", argv[0]);
         return ARGS_ERROR;
     }
     int idx = atoi(argv[1]);
@@ -61,11 +61,11 @@ int main(int argc, char *argv[]) {
         contatore++;
         if (ipc_send(fd[miner_target], &m) == -1) {
             if (errno == EAGAIN) {
-                snprintf(log_buf, sizeof(log_buf), "Miner %d pieno/morto, invio %s fallito (EAGAIN)", miner_target, tx);
+                snprintf(log_buf, sizeof(log_buf), "Miner %d full/dead, sending %s failed (EAGAIN)", miner_target, tx);
                 log_msg(LOG_WARNING, log_buf);
             }
         } else {
-            snprintf(log_buf, sizeof(log_buf), "Inviata a miner %d: %s", miner_target, tx);
+            snprintf(log_buf, sizeof(log_buf), "Sent to miner %d: %s", miner_target, tx);
             log_msg(LOG_INFO, log_buf);
         }
     }
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
         close(fd[j]);
     }
 
-    snprintf(log_buf, sizeof(log_buf), "Client %d terminato correttamente", idx);
+    snprintf(log_buf, sizeof(log_buf), "Client %d terminated successfully", idx);
     log_msg(LOG_INFO, log_buf);
 
     log_close();

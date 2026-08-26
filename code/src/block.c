@@ -122,8 +122,12 @@ int block_serialize(const block_t *b, char *out, size_t cap) {
         return SYS_ERROR; //if join_tx returns -1
     }
 
-    // TODO: when Andrei's crypto.c is ready, replace the three "%016llx" with "u64_to_hex16"
-    int written = snprintf(out, cap, "%016llx%016llx%s%s%016llx%s", (unsigned long long)b->index, (unsigned long long)b->timestamp, b->prev_hash, b->merkle_root, (unsigned long long)b->nonce, transactions);
+    hex16_t index_hex, timestamp_hex, nonce_hex;
+    u64_to_hex16(b->index, index_hex);
+    u64_to_hex16(b->timestamp, timestamp_hex);
+    u64_to_hex16(b->nonce, nonce_hex);
+
+    int written = snprintf(out, cap, "%s%s%s%s%s%s", index_hex, timestamp_hex, b->prev_hash, b->merkle_root, nonce_hex, transactions);
     
     if (written < 0 || (size_t)written >= cap) {
         return SYS_ERROR;
@@ -147,8 +151,12 @@ int block_to_csv_row(const block_t *b, char *out, size_t cap) {
         return SYS_ERROR; //if join_tx returns -1
     }
 
-    // TODO: when Andrei's crypto.c is ready, replace the three "%016llx" with "u64_to_hex16"
-    int written = snprintf(out, cap, "%016llx,%016llx,%s,%s,%016llx,%s", (unsigned long long)b->index, (unsigned long long)b->timestamp, b->prev_hash, b->merkle_root, (unsigned long long)b->nonce, transactions);
+    hex16_t index_hex, timestamp_hex, nonce_hex;
+    u64_to_hex16(b->index, index_hex);
+    u64_to_hex16(b->timestamp, timestamp_hex);
+    u64_to_hex16(b->nonce, nonce_hex);
+
+    int written = snprintf(out, cap, "%s,%s,%s,%s,%s,%s", index_hex, timestamp_hex, b->prev_hash, b->merkle_root, nonce_hex, transactions);
     
     if (written < 0 || (size_t)written >= cap) {
         return SYS_ERROR;

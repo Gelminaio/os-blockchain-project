@@ -4,16 +4,16 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h> // serve per usare read/write
-#include <fcntl.h> // per i flag O_NONBLOCK, O_RDWR, O_WRONLY
-#include <sys/stat.h> // per mkfifo, mkdir, e i permessi
-#include <errno.h> // per intercettare EEXIST, EAGAIN, EINTR
+#include <unistd.h> // for read/write
+#include <fcntl.h> // for the O_NONBLOCK, O_RDWR, O_WRONLY flags
+#include <sys/stat.h> // for mkfifo, mkdir and the permissions
+#include <errno.h> // to catch EEXIST, EAGAIN, EINTR
 
 volatile sig_atomic_t g_abort_mining = 0;
 volatile sig_atomic_t g_should_stop = 0;
 
 
-//costruttore di indirizzi
+//builds the fifo paths
 int ipc_fifo_path(char *out, size_t cap, role_t role, int idx){
    
     int res;
@@ -40,109 +40,115 @@ int ipc_fifo_path(char *out, size_t cap, role_t role, int idx){
     }
 }
 
-// viene chiamata dal padre prima di creare i figli con fork()
+// called by the parent before creating the children with fork()
 int ipc_create_all(int n_nodi, int n_miner, int *fds_out){
     
     char percorso[256];
     int current_fd_index = 0;
 
-    // CREAZIONE CARTELLA
+    // create the directory
     if(mkdir(FIFO_DIR, 0755) == -1 && errno != EEXIST){
-        perror("Errore critico su mkdir");
+        perror("mkdir failed");
         return IPC_ERROR;
     }
 
-    // CICLO NODI:
+    // nodes loop
     for(int i = 0; i < n_nodi; i++){
 
         
-        if(ipc_fifo_path(percorso, sizeof(percorso), ROLE_NODE, i) != 0){
+        if (ipc_fifo_path(percorso, sizeof(percorso), ROLE_NODE, i) != OK) {
             return IPC_ERROR;
         }
 
-        // creazione fifo
-        if(mkfifo(percorso, 0644)) == -1 && errno != EEXIST){
-            perror("Errore mkfifo nodo");
+        // create the fifo
+        if (mkfifo(percorso, 0644) == -1 && errno != EEXIST) {
+            perror("mkfifo failed for node");
             return IPC_ERROR;
         }
 
-        // Apro la FIFO
-        int fd = open(percorso, O_RWDR);
+        // open the fifo
+        int fd = open(percorso, O_RDWR);
         if(fd == -1){
-            perror("Errore open O_RDWR nodo");
+            perror("open O_RDWR failed for node");
             return IPC_ERROR;
         }
 
-        // salvo descrittore nell'array
+        // save the descriptor in the array
         fds_out[current_fd_index++] = fd;
     }
 
-    // CICLO MINER
+    // miners loop
     for(int i = 0; i < n_miner; i++){
         
-        if(ipc_fifo_path(percorso, sizeof(percorso), ROLE_MINER, i) != 0){
+        if (ipc_fifo_path(percorso, sizeof(percorso), ROLE_MINER, i) != OK) {
             return IPC_ERROR;
         }
 
-        f(mkfifo(percorso, 0644)) == -1 && errno != EEXIST){
-            perror("Errore mkfifo miner");
+        if (mkfifo(percorso, 0644) == -1 && errno != EEXIST) {
+            perror("mkfifo failed for miner");
             return IPC_ERROR;
         }
 
-        // Apro la FIFO
-        int fd = open(percorso, O_RWDR);
+        // open the fifo
+        int fd = open(percorso, O_RDWR);
         if(fd == -1){
-            perror("Errore open O_RDWR miner");
+            perror("open O_RDWR failed for miner");
             return IPC_ERROR;
         }
 
-        // salvo descrittore nell'array
-        fds_out[current_fd_index] = fd;
+        // save the descriptor in the array
+        fds_out[current_fd_index++] = fd;
     }
 
-    // FIFO PADRE
-    if(ipc_fifo_path(percorso, sizeof(percorso), ROLE_PARENT, i) != 0){
-            return IPC_ERROR;
-    }
-
-    f(mkfifo(percorso, 0644)) == -1 && errno != EEXIST){
-        perror("Errore mkfifo padre");
+    // parent fifo
+    if (ipc_fifo_path(percorso, sizeof(percorso), ROLE_PARENT, 0) != OK) {
         return IPC_ERROR;
     }
 
-    // Apro la FIFO
-    int fd = open(percorso, O_RWDR);
+    if (mkfifo(percorso, 0644) == -1 && errno != EEXIST) {
+        perror("mkfifo failed for parent");
+        return IPC_ERROR;
+    }
+
+    // open the fifo
+    int fd = open(percorso, O_RDWR);
     if(fd == -1){
-        perror("Errore open O_RDWR padre");
+        perror("open O_RDWR failed for parent");
         return IPC_ERROR;
     }
 
-    // salvo descrittore nell'array
+    // save the descriptor in the array
     fds_out[current_fd_index++] = fd;
 
+    return OK;
 }
 
-// apertura della propria casella dove si leggono i propri messaggi
+// opens your own inbox, where you read your messages
 int ipc_open_inbox(role_t role, int idx, int nonblock, int *fd){
     
     char percorso[256];
     
-    // RICAVO LA STRINGA DAL PERCORSO
-    if(ipc_fifo_path(percorso, sizeof(percorso), role, idx) != OK{
+    //build the path string
+    if (ipc_fifo_path(percorso, sizeof(percorso), role, idx) != OK) {
         return IPC_ERROR;
     }
 
-    //PREPARO I FLAG PARTENDO DALLA LETTURA/SCRITTURA
+    //start from read/write
     int flags = O_RDWR;
+
+    //the miner checks the inbox without stopping: add O_NONBLOCK
+    if(nonblock != 0){
+        flags |= O_NONBLOCK;
+    }
     
-    //APRO LA FIFO
+    //open the fifo
     int temp_fd = open(percorso, flags);
     if(temp_fd == -1){
-        perror("Errore open_inbox");
+        perror("open_inbox failed");
         return IPC_ERROR;
     } 
 
-    //SALVO E RITORNO
+    //save and return
     *fd = temp_fd;
     return OK;
 
@@ -151,23 +157,23 @@ int ipc_open_inbox(role_t role, int idx, int nonblock, int *fd){
 int ipc_open_sender(role_t role, int idx, int *fd){
     char percorso[256];
     
-    // RICAVO LA STRINGA DAL PERCORSO
+    //build the path string
     if(ipc_fifo_path(percorso, sizeof(percorso), role, idx) != OK){
         return IPC_ERROR;
     }
 
     int temp_fd = open(percorso, O_WRONLY| O_NONBLOCK);
     if(temp_fd == -1){
-        perror("Errore open_sender");
+        perror("open_sender failed");
         return IPC_ERROR;
     }
 
-    //SALVO E RITORNO
+    //save and return
     *fd = temp_fd;
     return OK;
 }
 
-// lettura e scrittura di messaggi
+// reading and writing messages
 int ipc_send(int fd, const msg_t *m){
     
     ssize_t res = write(fd, m, sizeof *m);
@@ -178,13 +184,13 @@ int ipc_send(int fd, const msg_t *m){
     if( res == -1 && errno == EAGAIN){
         return IPC_ERROR;
     }else{
-        perror("Errore in ipc_send (write)");
+        perror("ipc_send failed (write)");
         return IPC_ERROR;
     }
 }
 
 int ipc_recv(int fd, msg_t *m){
-    size_t counter = 0; // contatore dei byte raccolti
+    size_t counter = 0; // counter of the collected bytes
 
     while(counter < sizeof(msg_t)){
         ssize_t res = read(fd, (char*) m + counter, sizeof(msg_t) - counter);
@@ -196,25 +202,29 @@ int ipc_recv(int fd, msg_t *m){
         }else{
             return IPC_ERROR;
         }
-        return OK;
     }
+    return OK;
 }
 
 int ipc_recv_nb(int fd, msg_t *m){
-    size_t counter = 0; // contatore dei byte raccolti
+    size_t counter = 0; // counter of the collected bytes
 
     while(counter < sizeof(msg_t)){
         ssize_t res = read(fd, (char*) m + counter, sizeof(msg_t) - counter);
         if(res > 0){
             counter += res;
         }
-        else if(res == -1 &&  errno == EINTR && res == 0){
+        else if(res == -1 && errno == EINTR){
+            return IPC_INTR;
+        }
+        else if((res == 0 || (res == -1 && errno == EAGAIN)) && counter == 0){
+            //empty inbox: no byte read in this round
             return IPC_EMPTY;
         }else{
             return IPC_ERROR;
         }
-        return OK;
     }
+    return OK;
 }
 
 int ipc_recv_timeout(int fd, msg_t *m, int secondi){
@@ -222,34 +232,38 @@ int ipc_recv_timeout(int fd, msg_t *m, int secondi){
    int max_ms = secondi * 1000;
 
     while(elapsed_ms < max_ms){
-        int res = ipc_rev_nb(fd, m);
+        int res = ipc_recv_nb(fd, m);
 
-        if(res == 0){
-            return 0;
-        }else if(res == 1){
+        if(res == OK){
+            return OK;
+        }else if(res == IPC_EMPTY){
             usleep(POLL_NAP_MS *1000);
             elapsed_ms += POLL_NAP_MS;
-        }else if( res == 2){
-            return 2;
+        }else if( res == IPC_INTR){
+            return IPC_INTR;
         }else{
-            return -1;
+            return IPC_ERROR;
         }
    }
-    return 3;
+    return IPC_TIMEOUT;
 }
 
-// gestione dei segnali POSIX
+// POSIX signal handling
+//inside a signal handler you can only set a flag
+static void handle_stop(int sig) { (void)sig; g_should_stop = 1; }
+static void handle_usr1(int sig) { (void)sig; g_abort_mining = 1; }
+
 void ipc_install_handlers(role_t role){
     struct sigaction act;
     act.sa_handler = handle_stop;
     sigemptyset(&act.sa_mask);
     act.sa_flags = 0;
     
-    //tutti i ruoli installano SIGINT e  SIGTERM
+    //every role installs SIGINT and SIGTERM
     sigaction(SIGINT, &act, NULL);
     sigaction(SIGTERM, &act, NULL);
 
-    //solo i miner installano SIGUR1
+    //only the miners install SIGUSR1
     if(role == ROLE_MINER){
         struct sigaction act_usr1;
         act_usr1.sa_handler = handle_usr1;
@@ -265,29 +279,29 @@ int ipc_signal_pids(const pid_t *pids, size_t n, int sig){
     for(size_t i = 0; i < n;i++){
         kill(pids[i], sig);
     }
-    return 0;
+    return OK;
 }
 
 int ipc_unlink_all(int n_nodi, int n_miner){
     char path[256];
 
-    //cancella la FIFO dai nodi
+    //delete the nodes' fifos
     for(int i = 0; i < n_nodi; i++){
         ipc_fifo_path(path, sizeof(path), ROLE_NODE, i);
         unlink(path);
     }
 
-    //cancella la FIFO dai miner
-    for(int i = 0; i < n_nodi; i++){
+    //delete the miners' fifos
+    for(int i = 0; i < n_miner; i++){
         ipc_fifo_path(path, sizeof(path), ROLE_MINER, i);
         unlink(path);
     }
-    //cancella la FIFO  del padre
-    ipc_fifo_path(path, sizeof(path), ROLE_PARENT, i);
-        unlink(path);
-    
-    //rimozione cartella
+    //delete the parent's fifo
+    ipc_fifo_path(path, sizeof(path), ROLE_PARENT, 0);
+    unlink(path);
+
+    //remove the directory
     rmdir(FIFO_DIR);
-    
-    return 0;
+
+    return OK;
 }
