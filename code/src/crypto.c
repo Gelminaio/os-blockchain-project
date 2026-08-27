@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-#include "crypto.h"
-#include "config.h"
-#include "errors.h"
+#include "include/crypto.h"
+#include "include/config.h"
+#include "include/errors.h"
 
 /* =========================================================================
     

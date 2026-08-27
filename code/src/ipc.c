@@ -1,13 +1,16 @@
-#include "ipc.h"
-#include "config.h"
-#include "errors.h"
+#define _POSIX_C_SOURCE 200809L
+
+#include "include/ipc.h"
+#include "include/config.h"
+#include "include/errors.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h> // serve per usare read/write
 #include <fcntl.h> // per i flag O_NONBLOCK, O_RDWR, O_WRONLY
 #include <sys/stat.h> // per mkfifo, mkdir, e i permessi
-#include <errno.h> // per intercettare EEXIST, EAGAIN, EINTR
+#include <errno.h>
+#include <signal.h> 
 
 volatile sig_atomic_t g_abort_mining = 0;
 volatile sig_atomic_t g_should_stop = 0;
@@ -61,13 +64,13 @@ int ipc_create_all(int n_nodi, int n_miner, int *fds_out){
         }
 
         // creazione fifo
-        if(mkfifo(percorso, 0644)) == -1 && errno != EEXIST){
+        if(mkfifo(percorso, 0644) == -1 && errno != EEXIST){
             perror("Errore mkfifo nodo");
             return IPC_ERROR;
         }
 
         // Apro la FIFO
-        int fd = open(percorso, O_RWDR);
+        int fd = open(percorso, O_RDWR);
         if(fd == -1){
             perror("Errore open O_RDWR nodo");
             return IPC_ERROR;
@@ -84,34 +87,34 @@ int ipc_create_all(int n_nodi, int n_miner, int *fds_out){
             return IPC_ERROR;
         }
 
-        f(mkfifo(percorso, 0644)) == -1 && errno != EEXIST){
+        if(mkfifo(percorso, 0644) == -1 && errno != EEXIST){
             perror("Errore mkfifo miner");
             return IPC_ERROR;
         }
 
         // Apro la FIFO
-        int fd = open(percorso, O_RWDR);
+        int fd = open(percorso, O_RDWR);
         if(fd == -1){
             perror("Errore open O_RDWR miner");
             return IPC_ERROR;
         }
 
         // salvo descrittore nell'array
-        fds_out[current_fd_index] = fd;
+        fds_out[current_fd_index++] = fd;
     }
 
     // FIFO PADRE
-    if(ipc_fifo_path(percorso, sizeof(percorso), ROLE_PARENT, i) != 0){
+    if(ipc_fifo_path(percorso, sizeof(percorso), ROLE_PARENT, 0) != 0){
             return IPC_ERROR;
     }
 
-    f(mkfifo(percorso, 0644)) == -1 && errno != EEXIST){
+    if(mkfifo(percorso, 0644) == -1 && errno != EEXIST){
         perror("Errore mkfifo padre");
         return IPC_ERROR;
     }
 
     // Apro la FIFO
-    int fd = open(percorso, O_RWDR);
+    int fd = open(percorso, O_RDWR);
     if(fd == -1){
         perror("Errore open O_RDWR padre");
         return IPC_ERROR;
@@ -119,6 +122,7 @@ int ipc_create_all(int n_nodi, int n_miner, int *fds_out){
 
     // salvo descrittore nell'array
     fds_out[current_fd_index++] = fd;
+    return OK;
 
 }
 
@@ -128,7 +132,7 @@ int ipc_open_inbox(role_t role, int idx, int nonblock, int *fd){
     char percorso[256];
     
     // RICAVO LA STRINGA DAL PERCORSO
-    if(ipc_fifo_path(percorso, sizeof(percorso), role, idx) != OK{
+    if(ipc_fifo_path(percorso, sizeof(percorso), role, idx) != OK){
         return IPC_ERROR;
     }
 
@@ -148,7 +152,7 @@ int ipc_open_inbox(role_t role, int idx, int nonblock, int *fd){
 
 }
 
-int ipc_open_sender(role_t role, int idx, int *fd){
+int ipc_open_sender(role_t role, int idx,int *fd){
     char percorso[256];
     
     // RICAVO LA STRINGA DAL PERCORSO
@@ -207,8 +211,8 @@ int ipc_recv_nb(int fd, msg_t *m){
         ssize_t res = read(fd, (char*) m + counter, sizeof(msg_t) - counter);
         if(res > 0){
             counter += res;
-        }
-        else if(res == -1 &&  errno == EINTR && res == 0){
+
+        }else if(res == -1 &&  errno == EINTR && res == 0){
             return IPC_EMPTY;
         }else{
             return IPC_ERROR;
@@ -222,7 +226,7 @@ int ipc_recv_timeout(int fd, msg_t *m, int secondi){
    int max_ms = secondi * 1000;
 
     while(elapsed_ms < max_ms){
-        int res = ipc_rev_nb(fd, m);
+        int res = ipc_recv_nb(fd, m);
 
         if(res == 0){
             return 0;
@@ -237,6 +241,15 @@ int ipc_recv_timeout(int fd, msg_t *m, int secondi){
    }
     return 3;
 }
+
+void handle_stop(int signum) {
+    g_should_stop = 1;
+}
+
+void handle_usr1(int signum) {
+    g_abort_mining = 1;
+}
+
 
 // gestione dei segnali POSIX
 void ipc_install_handlers(role_t role){
@@ -283,11 +296,11 @@ int ipc_unlink_all(int n_nodi, int n_miner){
         unlink(path);
     }
     //cancella la FIFO  del padre
-    ipc_fifo_path(path, sizeof(path), ROLE_PARENT, i);
+    ipc_fifo_path(path, sizeof(path), ROLE_PARENT, 0);
         unlink(path);
     
-    //rimozione cartella
-    rmdir(FIFO_DIR);
+        //rimozione cartella
+        rmdir(FIFO_DIR);
     
-    return 0;
+        return 0;
 }
