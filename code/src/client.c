@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
         m.payload_len = strlen(tx);
         int miner_target = contatore % num_miner;
         contatore++;
-        if (ipc_send(fd[miner_target], &m) == -1) {
+        if (ipc_send(fd[miner_target], &m) != OK) {
             if (errno == EAGAIN) {
                 snprintf(log_buf, sizeof(log_buf), "Miner %d full/dead, sending %s failed (EAGAIN)", miner_target, tx);
                 log_msg(LOG_WARNING, log_buf);
