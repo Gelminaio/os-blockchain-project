@@ -35,9 +35,9 @@ file="$1"
             [[ ! "$nonce" =~ ^[0-9a-f]{16}$ ]] || \
             [[ ! "$prev" =~ ^[0-9a-f]{64}$ ]] || \
             [[ ! "$mroot" =~ ^[0-9a-f]{64}$ ]]; then
+            # the row cannot be read, no point in checking the rest of it
             echo "line $line_no: malformed field" >&2
-            [[ $first_error -eq 0 ]] && first_error="$INVALID_BLOCK"
-
+            exit "$CSV_PARSE_ERROR"
         fi
 
         # the merkle root
@@ -51,14 +51,14 @@ file="$1"
         if [[ $blocks -eq 1 ]]; then
             if [[ "$idx" != "0000000000000000" ]]; then
                 echo "line $line_no: wrong index" >&2
-                [[ $first_error -eq 0 ]] && first_error="$INVALID_BLOCK"
+                [[ $first_error -eq 0 ]] && first_error="$CHAIN_MISMATCH"
             fi
             prev_idx_dec=0
         else
             idx_dec=$((16#$idx))
             if [[ $idx_dec -ne $((prev_idx_dec + 1)) ]]; then
-            echo "line $line_no: wrong index" >&2
-            [[ $first_error -eq 0 ]] && first_error="$INVALID_BLOCK"
+                echo "line $line_no: wrong index" >&2
+                [[ $first_error -eq 0 ]] && first_error="$CHAIN_MISMATCH"
             fi
             prev_idx_dec=$idx_dec
         fi
@@ -66,8 +66,8 @@ file="$1"
         # the link to the previous block
         if [[ $blocks -gt 1 ]]; then
             if [[ "$prev" != "$prev_computed" ]]; then
-            echo "line $line_no: broken link" >&2
-            [[ $first_error -eq 0 ]] && first_error="$CHAIN_MISMATCH"
+                echo "line $line_no: broken link" >&2
+                [[ $first_error -eq 0 ]] && first_error="$CHAIN_MISMATCH"
             fi
         fi
 
