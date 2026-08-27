@@ -1,4 +1,5 @@
 #!/bin/bash
+# entry point for the bash side: --verify, --hash, --merkle
 
 cd "$(dirname "$0")"
 

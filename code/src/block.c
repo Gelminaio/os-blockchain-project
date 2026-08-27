@@ -1,3 +1,4 @@
+//blocks and the chain: serialization, validation, append rules and csv i/o
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -11,7 +12,7 @@
 
 static int join_txs(const block_t *b, char *out, size_t cap) {
     //if there's no space
-    if(cap == 0) {
+    if (cap == 0) {
         return -1;
     }
 
@@ -27,10 +28,10 @@ static int join_txs(const block_t *b, char *out, size_t cap) {
     }
     size_t offset = (size_t) written; //size_t, non-negative integer
 
-    for(size_t i = 1; i < b->tx_count; i++) {
+    for (size_t i = 1; i < b->tx_count; i++) {
         written = snprintf(out + offset, cap - offset, "::%s", b->txs[i]);
         if (written < 0 || (size_t)written >= (cap - offset)) {
-            return -1; 
+            return -1;
         }
         offset += (size_t) written;
     }
@@ -94,7 +95,7 @@ static int block_is_valid(const block_t *b, int is_genesis) {
 static int chain_push(chain_t *c, const block_t *b) {
     if (c->len >= c->cap) {
         size_t new_cap;
-        if(c->cap==0) {
+        if (c->cap==0) {
             new_cap = 1;
         }
         else {
@@ -128,7 +129,7 @@ int block_serialize(const block_t *b, char *out, size_t cap) {
     u64_to_hex16(b->nonce, nonce_hex);
 
     int written = snprintf(out, cap, "%s%s%s%s%s%s", index_hex, timestamp_hex, b->prev_hash, b->merkle_root, nonce_hex, transactions);
-    
+
     if (written < 0 || (size_t)written >= cap) {
         return SYS_ERROR;
     }
@@ -138,7 +139,7 @@ int block_serialize(const block_t *b, char *out, size_t cap) {
 int block_hash(const block_t *b, char out[65]) {
     char sb[MAX_SERIAL_LEN];
     int result = block_serialize(b, sb, sizeof(sb));
-    if(result != OK) {
+    if (result != OK) {
         return result;
     }
     return sha256_hex(sb, strlen(sb), out); //method from crypto.c
@@ -157,7 +158,7 @@ int block_to_csv_row(const block_t *b, char *out, size_t cap) {
     u64_to_hex16(b->nonce, nonce_hex);
 
     int written = snprintf(out, cap, "%s,%s,%s,%s,%s,%s", index_hex, timestamp_hex, b->prev_hash, b->merkle_root, nonce_hex, transactions);
-    
+
     if (written < 0 || (size_t)written >= cap) {
         return SYS_ERROR;
     }
@@ -167,7 +168,7 @@ int block_to_csv_row(const block_t *b, char *out, size_t cap) {
 int block_from_csv_row(const char *row, block_t *b) {
     memset(b, 0, sizeof *b);
 
-    if(strlen(row) < 181 || row[16] != ',' || row[33] != ',' || row[98] != ',' || row[163] != ',' || row[180] != ',') {
+    if (strlen(row) < 181 || row[16] != ',' || row[33] != ',' || row[98] != ',' || row[163] != ',' || row[180] != ',') {
         return CSV_PARSE_ERROR;
     }
 
@@ -215,10 +216,10 @@ int block_from_csv_row(const char *row, block_t *b) {
         return INVALID_BLOCK; //no transactions case
     }
 
-    while(1) {
+    while (1) {
         //searching for the next "::"
         const char *next_separator = strstr(current_tx, "::");
-        
+
         size_t tx_len; //transaction length = difference between next_separator and current_tx
         if (next_separator != NULL) {
             tx_len = (size_t)(next_separator - current_tx);
@@ -233,7 +234,7 @@ int block_from_csv_row(const char *row, block_t *b) {
 
         //string is too long
         if (tx_len >= MAX_TX_LEN) {
-            return INVALID_BLOCK; 
+            return INVALID_BLOCK;
         }
 
         memcpy(b->txs[b->tx_count], current_tx, tx_len);
@@ -257,36 +258,36 @@ void chain_init(chain_t *c) {
 }
 
 void chain_free(chain_t *c) {
-    if(c->v != NULL) {
+    if (c->v != NULL) {
         free(c->v);
     }
     chain_init(c); //resets the chain
 }
 
 const block_t *chain_tip(const chain_t *c) {
-    if(c==NULL || c->len==0) {
+    if (c==NULL || c->len==0) {
         return NULL;
     }
     return &(c->v[c->len - 1]);
 }
 
 const block_t *chain_find_index(const chain_t *c, uint64_t i) {
-    if(c==NULL || c->len<=i || c->v[i].index != i) {
+    if (c==NULL || c->len<=i || c->v[i].index != i) {
         return NULL;
     }
     return &(c->v[i]);
 }
 
 const block_t *chain_find_hash(const chain_t *c, const char *h) {
-    if(c==NULL || c->len==0 || h==NULL) {
+    if (c==NULL || c->len==0 || h==NULL) {
         return NULL;
     }
 
     char current_hash[65];
 
-    for(size_t i = 0; i < c->len; i++) {
-        if(block_hash(&(c->v[i]), current_hash) == OK) {
-            if(strcmp(current_hash, h) == 0) {
+    for (size_t i = 0; i < c->len; i++) {
+        if (block_hash(&(c->v[i]), current_hash) == OK) {
+            if (strcmp(current_hash, h) == 0) {
                 return &(c->v[i]); //found, return the pointer to the block
             }
         }
@@ -309,16 +310,16 @@ append_result_t chain_append(chain_t *c, const block_t *b) {
     if (block_hash(b, b_hash) != OK) {
         return APPEND_INVALID;
     }
-    
 
-    //CASE 1: duplicate block
+
+    //case 1: duplicate block
     if (chain_find_hash(c, b_hash) != NULL) {
         return APPEND_DUP;
     }
 
     const block_t *tip = chain_tip(c);
 
-    //CASE 2: empty chain
+    //case 2: empty chain
     if (tip == NULL) {
         if (is_genesis) {
             if (chain_push(c, b) != OK) return APPEND_INVALID; //realloc failed
@@ -335,19 +336,19 @@ append_result_t chain_append(chain_t *c, const block_t *b) {
         return APPEND_INVALID;
     }
 
-    //CASE 3: normal situation
+    //case 3: normal situation
     if ((b->index == tip->index + 1) && (strcmp(b->prev_hash, tip_hash) == 0)) {
         if (chain_push(c, b) != OK) return APPEND_INVALID;
         return APPEND_OK;
     }
 
-    //CASE 4: too far ahead
+    //case 4: too far ahead
     if (b->index > tip->index + 1) {
         return APPEND_AHEAD;
     }
 
-    //CASE 5: tie-breaker (same index and same father)
-    if (b->index == tip->index && strcmp(b->prev_hash, tip->prev_hash) == 0) { 
+    //case 5: tie-breaker (same index and same father)
+    if (b->index == tip->index && strcmp(b->prev_hash, tip->prev_hash) == 0) {
         //alphabetical tie-breaker between the two hashes
         if (strcmp(b_hash, tip_hash) < 0) {
             //new block wins, replacement
@@ -367,11 +368,11 @@ append_result_t chain_append(chain_t *c, const block_t *b) {
 }
 
 int csv_load(const char *path, chain_t *out) {
-    //chain MUST arrive initialized and empty from main.c
+    //the chain must arrive initialized and empty from main.c
     char msg[256]; //buffer for logs
 
     FILE *fp = fopen(path, "r");
-    if(fp==NULL) {
+    if (fp==NULL) {
         snprintf(msg, sizeof(msg), "Cannot open CSV file %s for reading: %s", path, strerror(errno));
         log_msg(LOG_ERROR, msg);
         return FILE_ERROR; //file doesn't exist
@@ -380,7 +381,7 @@ int csv_load(const char *path, chain_t *out) {
     char buf[MAX_CSV_ROW_LEN];
 
     //empty file case
-    if(fgets(buf, sizeof(buf), fp) == NULL) {
+    if (fgets(buf, sizeof(buf), fp) == NULL) {
         snprintf(msg, sizeof(msg), "CSV file %s exists but is empty.", path);
         log_msg(LOG_ERROR, msg);
         fclose(fp);
@@ -391,7 +392,7 @@ int csv_load(const char *path, chain_t *out) {
     buf[strcspn(buf, "\n")] = '\0';
 
     //wrong header case
-    if(strcmp(buf, CSV_HEADER) != 0) {
+    if (strcmp(buf, CSV_HEADER) != 0) {
         snprintf(msg, sizeof(msg), "Non-valid CSV header or wrong.");
         log_msg(LOG_ERROR, msg);
         fclose(fp);
@@ -400,10 +401,10 @@ int csv_load(const char *path, chain_t *out) {
 
     int line_number = 2; //line 1 is the header
 
-    while(fgets(buf, sizeof(buf), fp) != NULL) {
+    while (fgets(buf, sizeof(buf), fp) != NULL) {
         size_t len = strlen(buf);
 
-        if(len > 0 && buf[len - 1] != '\n' && !feof(fp)) {
+        if (len > 0 && buf[len - 1] != '\n' && !feof(fp)) {
             snprintf(msg, sizeof(msg), "Line %d exceeds the buffer limit", line_number);
             log_msg(LOG_ERROR, msg);
             fclose(fp);
@@ -413,7 +414,7 @@ int csv_load(const char *path, chain_t *out) {
         buf[strcspn(buf, "\n")] = '\0';
 
         block_t b;
-        if(block_from_csv_row(buf, &b) != OK) {
+        if (block_from_csv_row(buf, &b) != OK) {
             snprintf(msg, sizeof(msg), "Line %d isn't correctly formatted", line_number);
             log_msg(LOG_ERROR, msg);
             fclose(fp);
@@ -432,7 +433,7 @@ int csv_load(const char *path, chain_t *out) {
                 log_msg(LOG_ERROR, msg);
                 fclose(fp);
                 return INVALID_BLOCK;
-                
+
             default:
                 //all the other cases: APPEND_AHEAD, APPEND_STALE, APPEND_DUP, APPEND_REPLACED
                 snprintf(msg, sizeof(msg), "Chain mismatch (code %d) at line %d.", res, line_number);
@@ -449,7 +450,7 @@ int csv_load(const char *path, chain_t *out) {
     return OK;
 }
 int csv_save(const char *path, const chain_t *c) {
-    if(c==NULL) {
+    if (c==NULL) {
         return FILE_ERROR;
     }
 
@@ -466,7 +467,7 @@ int csv_save(const char *path, const chain_t *c) {
 
 
     FILE *fp = fopen(tmp_path, "w");
-    if(fp==NULL) {
+    if (fp==NULL) {
         char msg[1024];
         snprintf(msg, sizeof(msg), "Cannot open temporary file %s for writing: %s", tmp_path, strerror(errno));
         log_msg(LOG_ERROR, msg);
@@ -474,7 +475,7 @@ int csv_save(const char *path, const chain_t *c) {
     }
 
     //csv header
-    if(fprintf(fp, "%s\n", CSV_HEADER) < 0) {
+    if (fprintf(fp, "%s\n", CSV_HEADER) < 0) {
         fclose(fp);
         remove(tmp_path);
         return FILE_ERROR;
@@ -482,13 +483,13 @@ int csv_save(const char *path, const chain_t *c) {
 
     //write every block, one per line
     char row_buf[MAX_CSV_ROW_LEN];
-    for(size_t i = 0; i < c->len; i++) {
-        if(block_to_csv_row(&(c->v[i]), row_buf, sizeof(row_buf)) != OK) {
+    for (size_t i = 0; i < c->len; i++) {
+        if (block_to_csv_row(&(c->v[i]), row_buf, sizeof(row_buf)) != OK) {
             fclose(fp);
             remove(tmp_path);
             return FILE_ERROR;
         }
-        if(fprintf(fp, "%s\n", row_buf) < 0) {
+        if (fprintf(fp, "%s\n", row_buf) < 0) {
             fclose(fp);
             remove(tmp_path);
             return FILE_ERROR;
@@ -496,13 +497,13 @@ int csv_save(const char *path, const chain_t *c) {
     }
 
     //if the disk is full
-    if(fclose(fp) != 0) {
+    if (fclose(fp) != 0) {
         remove(tmp_path);
         return FILE_ERROR;
     }
 
     //atomic writing: removes the final .tmp
-    if(rename(tmp_path, path) != 0) {
+    if (rename(tmp_path, path) != 0) {
         char msg[1024];
         snprintf(msg, sizeof(msg), "Cannot rename %s to %s: %s", tmp_path, path, strerror(errno));
         log_msg(LOG_ERROR, msg);

@@ -194,8 +194,8 @@ int main(int argc, char *argv[]) {
 
 
 
-    char buf_nodi[16], buf_miner[16], buf_diff[16], buf_freq[16];
-    snprintf(buf_nodi, sizeof(buf_nodi), "%d", p.num_nodes);
+    char buf_nodes[16], buf_miner[16], buf_diff[16], buf_freq[16];
+    snprintf(buf_nodes, sizeof(buf_nodes), "%d", p.num_nodes);
     snprintf(buf_miner, sizeof(buf_miner), "%d", p.num_miners);
     snprintf(buf_diff, sizeof(buf_diff), "%d", p.difficulty);
     snprintf(buf_freq, sizeof(buf_freq), "%d", p.transaction_frequency);
@@ -203,7 +203,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < p.num_miners; i++) {
         char buf_idx[16];
         snprintf(buf_idx, sizeof(buf_idx), "%d", i);
-        char *args[] = { "miner", buf_idx, buf_nodi, buf_miner, buf_diff, BOOTSTRAP_CSV, NULL };
+        char *args[] = { "miner", buf_idx, buf_nodes, buf_miner, buf_diff, BOOTSTRAP_CSV, NULL };
 
         pid_t pid = spawn_child("./miner", args);
         if (pid > 0) {
@@ -216,7 +216,7 @@ int main(int argc, char *argv[]) {
         snprintf(buf_idx, sizeof(buf_idx), "%d", i);
 
         char **args = malloc((6 + p.num_miners + 1) * sizeof(char*));
-        args[0] = "node"; args[1] = buf_idx; args[2] = buf_nodi;
+        args[0] = "node"; args[1] = buf_idx; args[2] = buf_nodes;
         args[3] = buf_miner; args[4] = BOOTSTRAP_CSV;
 
         int arg_idx = 5;

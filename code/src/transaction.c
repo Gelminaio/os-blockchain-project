@@ -1,6 +1,4 @@
-//
-// Created by faitn on 09/08/2026.
-//
+//transaction format: validation with a regex and random generation
 #include "transaction.h"
 #include "errors.h"
 #include <string.h>
@@ -19,7 +17,7 @@ int transaction_init(void) {
         return OK;
     }
 
-    if (regcomp(&re, PATTERN, REG_EXTENDED | REG_NOSUB) !=0) {
+    if (regcomp(&re, PATTERN, REG_EXTENDED | REG_NOSUB) != 0) {
         return SYS_ERROR;
     }
     initialized = 1;
@@ -42,43 +40,26 @@ int transaction_is_valid(const char *s) {
     return INVALID_TRANSACTION;
 }
 
-/*static void random_name(char *buf, size_t cap) {
-    const char *alfabeto = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    size_t alfabeto_len = strlen(alfabeto);
-
-    size_t len = 3+random()%6;
-
-    if (len >= cap) {
-        len = cap-1;
-    }
-
-    for (size_t i=0; i<len; i++) {
-        buf[i] = alfabeto[random()%alfabeto_len];
-    }
-
-    buf[len] = '\0';
-}*/
-
 int transaction_generate_random(char *out, size_t cap) {
-    static const char *nomi[] = {
+    static const char *names[] = {
         "Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan", "Judy"
     };
-    int n_nomi = sizeof(nomi)/sizeof(nomi[0]);
-    int idx1 = random()%n_nomi;
-    int idx2 = random()%n_nomi;
+    int n_names = sizeof(names) / sizeof(names[0]);
+    int idx1 = random() % n_names;
+    int idx2 = random() % n_names;
 
-    if (idx1==idx2) {
-        idx2 = (idx1+1)%n_nomi;
+    if (idx1 == idx2) {
+        idx2 = (idx1 + 1) % n_names;
     }
 
-    const char *mittente = nomi[idx1];
-    const char *destinatario = nomi[idx2];
+    const char *sender = names[idx1];
+    const char *receiver = names[idx2];
 
-    int importo = 1+random()%999;
+    int amount = 1 + random() % 999;
 
-    int written = snprintf(out, cap,"%s pays %s %d coins", mittente, destinatario, importo);
+    int written = snprintf(out, cap, "%s pays %s %d coins", sender, receiver, amount);
 
-    if (written<0 || (size_t)written>=cap) {
+    if (written < 0 || (size_t)written >= cap) {
         return INVALID_TRANSACTION;
     }
 

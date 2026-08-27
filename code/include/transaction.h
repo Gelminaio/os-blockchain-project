@@ -1,6 +1,4 @@
-//
-// Created by faitn on 09/08/2026.
-//
+//transaction format: validation and random generation
 
 #ifndef OS_BLOCKCHAIN_PROJECT_TRANSACTION_H
 #define OS_BLOCKCHAIN_PROJECT_TRANSACTION_H
