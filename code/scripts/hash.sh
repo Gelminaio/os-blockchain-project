@@ -1,4 +1,5 @@
 #!/bin/bash
+# sha-256 of a hex string given on the command line
 
 source "$(dirname "$0")/errors.sh"
 

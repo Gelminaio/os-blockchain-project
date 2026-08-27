@@ -1,3 +1,4 @@
+//the parent's interactive command line
 #include <string.h>
 #include <stdio.h>
 #include <signal.h>
@@ -11,7 +12,7 @@
 #include "block.h"
 
 static const char* role_to_string(role_t role) {
-    switch(role) {
+    switch (role) {
         case ROLE_NODE:
             return "node";
         case ROLE_MINER:
@@ -24,14 +25,14 @@ static const char* role_to_string(role_t role) {
 }
 
 int cli_run(proc_t *tab, size_t n, const params_t *p) {
-    if(n > MAX_NODES + MAX_MINERS + MAX_CLIENTS || tab == NULL || p == NULL) {
+    if (n > MAX_NODES + MAX_MINERS + MAX_CLIENTS || tab == NULL || p == NULL) {
         return ARGS_ERROR;
     }
-    
+
     char input[1024]; //maximum CLI input length (it shoud be abundant)
 
     int announced[MAX_NODES + MAX_MINERS + MAX_CLIENTS]; //array used to flag if a process's death has already been announced
-    for(size_t i = 0; i<n; i++) {
+    for (size_t i = 0; i<n; i++) {
         announced[i] = 0;
     }
 
@@ -79,9 +80,9 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
 
     size_t current_miner = 0;
 
-    while(1) {
-        for(size_t i = 0; i < n; i++) {
-            if(!tab[i].alive && !announced[i]) {
+    while (1) {
+        for (size_t i = 0; i < n; i++) {
+            if (!tab[i].alive && !announced[i]) {
                 printf("\n[NOTICE] The %s %d (PID: %d) ended unexpectedly.\n", role_to_string(tab[i].role), tab[i].idx, tab[i].pid);
                 announced[i] = 1;
             }
@@ -91,23 +92,23 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
         fflush(stdout);
 
         //if there is an error or user enters ctrl + D
-        if(fgets(input, sizeof(input), stdin) == NULL) {
+        if (fgets(input, sizeof(input), stdin) == NULL) {
             printf("\nQuitting...\n");
             break;
         }
 
         input[strcspn(input, "\n")] = '\0';
 
-        if(input[0] == '\0') {
+        if (input[0] == '\0') {
             continue;
         }
 
-        //COMMAND MANAGEMENT
+        //command management
 
-        if(strcmp(input, "stop") == 0) {
+        if (strcmp(input, "stop") == 0) {
             break;
         }
-        else if(strcmp(input, "help") == 0) {
+        else if (strcmp(input, "help") == 0) {
             printf("Command list:\n");
             printf("- submit [transaction]\n");
             printf("- request blockchain [--index i | --hash h]\n");
@@ -116,50 +117,50 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             printf("- pause\n");
             printf("- resume\n");
             printf("- stop\n");
-            printf("- help\n");    
+            printf("- help\n");
         }
-        else if(strcmp(input, "pause") == 0) {
+        else if (strcmp(input, "pause") == 0) {
             pid_t pid_alive[MAX_NODES + MAX_MINERS + MAX_CLIENTS];
             size_t m = 0;
 
-            for(size_t i = 0; i < n; i++) {
-                if(tab[i].alive) {
+            for (size_t i = 0; i < n; i++) {
+                if (tab[i].alive) {
                     pid_alive[m] = tab[i].pid;
                     m++;
                 }
             }
-            if(m > 0) {
+            if (m > 0) {
                 ipc_signal_pids(pid_alive, m, SIGSTOP);
             }
             printf("%zu processes have been stopped\n", m);
         }
-        else if(strcmp(input, "resume") == 0) {
+        else if (strcmp(input, "resume") == 0) {
             pid_t pid_alive[MAX_NODES + MAX_MINERS + MAX_CLIENTS];
             size_t m = 0;
 
-            for(size_t i = 0; i < n; i++) {
-                if(tab[i].alive) {
+            for (size_t i = 0; i < n; i++) {
+                if (tab[i].alive) {
                     pid_alive[m] = tab[i].pid;
                     m++;
                 }
             }
-            if(m > 0) {
+            if (m > 0) {
                 ipc_signal_pids(pid_alive, m, SIGCONT);
             }
             printf("%zu processes have been resumed\n", m);
         }
-        else if(strncmp(input, "submit ", 7) == 0) {
+        else if (strncmp(input, "submit ", 7) == 0) {
             char *first_quote = strchr(input, '"');
             char *last_quote = strrchr(input, '"');
 
-            if(first_quote == NULL || last_quote == NULL || first_quote == last_quote) {
+            if (first_quote == NULL || last_quote == NULL || first_quote == last_quote) {
                 printf("Wrong usage. Expected format: submit \"<transaction>\"\n");
                 continue;
             }
 
             size_t tx_len = last_quote - first_quote - 1;
 
-            if(tx_len >= MAX_TX_LEN) {
+            if (tx_len >= MAX_TX_LEN) {
                 printf("Error: the transaction exceeds the maximum allowed length.\n");
                 continue;
             }
@@ -168,8 +169,8 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             memcpy(tx, first_quote+1, tx_len);
             tx[tx_len] = '\0';
 
-            int result = transaction_is_valid(tx); 
-            if(result != OK) {
+            int result = transaction_is_valid(tx);
+            if (result != OK) {
                 printf("Invalid transaction (INVALID_TRANSACTION, code %d). Not sent.\n", INVALID_TRANSACTION);
                 continue;
             }
@@ -193,7 +194,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
         }
         else if (strncmp(input, "request blockchain", 18) == 0) {
             char filter[MSG_PAYLOAD_MAX] = "ALL";
-            
+
             //args parsing (filter is optional)
             size_t len = strlen(input);
             if (len != 18) {
@@ -234,7 +235,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
                     printf("Error or IPC timeout: node didn't respond in time.\n");
                     break;
                 }
-            
+
                 if (strncmp(rep.payload, "ERR:", 4) == 0) {
                     printf("Error from node: %s\n", rep.payload + 4);
                     printf("[Error code: BLOCK_NOT_FOUND]\n");
@@ -251,7 +252,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
         }
         else if (strncmp(input, "request block", 13) == 0) {
             char filter[MSG_PAYLOAD_MAX] = "";
-            
+
             //here the filter is mandatory
             if (strlen(input) > 14 && input[13] == ' ') {
                 char *arg = input + 14; //skip "request block "
@@ -303,7 +304,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
                 }
             }
         }
-        else if (strncmp(input, "save blockchain", 15) == 0) {          
+        else if (strncmp(input, "save blockchain", 15) == 0) {
             char *file_name = NULL;
             //the file name is mandatory
             if (strlen(input) > 16 && input[15] == ' ') {
@@ -370,7 +371,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
                         row[len] = '\0';
 
                         block_t b;
-                        
+
                         if (block_from_csv_row(row, &b) != OK) {
                             printf("[Warning] Line is not valid for one block, skipped: %s\n", row);
                         } else {
