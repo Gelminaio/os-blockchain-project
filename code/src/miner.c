@@ -163,6 +163,11 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        //a SIGUSR1 that arrived while draining refers to a block we have just
+        //read, so clear it here: otherwise the attempts loop below would exit
+        //on its first round without ever rolling
+        g_abort_mining = 0;
+
         if (mempool_count == 0) {
             struct timespec req ={1,  0};
             nanosleep(&req, NULL);

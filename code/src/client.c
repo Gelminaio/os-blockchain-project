@@ -50,7 +50,12 @@ int main(int argc, char *argv[]) {
             }
         }
         transaction_generate_random(tx, sizeof(tx));
-        transaction_is_valid(tx);
+        if (transaction_is_valid(tx) != OK) {
+            snprintf(log_buf, sizeof(log_buf), "Generated an invalid transaction, skipped: %s", tx);
+            log_msg(LOG_WARNING, log_buf);
+            continue;
+        }
+
         msg_t m;
         memset(&m, 0, sizeof(m));
         m.type = MSG_TX;
