@@ -120,6 +120,15 @@ int main(int argc, char *argv[]) {
     struct sigaction sa_chld, sa_stop;
     memset(&sa_chld, 0, sizeof(sa_chld));
     sa_chld.sa_handler = reap_children;
+    //SA_NOCLDSTOP: without it the kernel also sends SIGCHLD when a child is
+    //stopped with SIGSTOP or resumed with SIGCONT, and that interrupts the
+    //CLI. reap_children only collects children that have terminated.
+    //SA_RESTART: so the fgets of the CLI restarts instead of returning NULL
+    //when a child dies, which the CLI would read as end of input.
+    //Only this handler: sa_stop below and the ones in ipc_install_handlers
+    //must keep sa_flags 0, or the sleep of the miner would not be
+    //interrupted by SIGUSR1 any more and the mining abort would stop working.
+    sa_chld.sa_flags = SA_NOCLDSTOP | SA_RESTART;
     sigaction(SIGCHLD, &sa_chld, NULL);
 
     memset(&sa_stop, 0, sizeof(sa_stop));
