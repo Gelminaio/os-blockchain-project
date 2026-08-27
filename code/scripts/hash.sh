@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source scripts/errors.sh
+source "$(dirname "$0")/errors.sh"
 
 len=$(printf '%s' "$1" | wc -c)
 

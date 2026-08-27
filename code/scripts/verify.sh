@@ -1,19 +1,19 @@
 #!/bin/bash
 
-source scripts/errors.sh
-source scripts/merkle.sh ""
+source "$(dirname "$0")/errors.sh"
+source "$(dirname "$0")/merkle.sh" ""
 
 file="$1"
 
-[[ -f "$file" ]] || { echo "File non trovato" >&2; exit "$FILE_ERROR"; }
-[[ -s "$file" ]] || { echo "File vuoto" >&2; exit "$CSV_PARSE_ERROR"; }
+[[ -f "$file" ]] || { echo "File not found" >&2; exit "$FILE_ERROR"; }
+[[ -s "$file" ]] || { echo "Empty file" >&2; exit "$CSV_PARSE_ERROR"; }
 
 {
     IFS= read -r header
     header="${header%$'\r'}"
 
     if [[ "$header" != "index,timestamp,prev_hash,merkle_root,nonce,transactions" ]]; then
-        echo "Intestazione CSV malformata" >&2
+        echo "Malformed CSV header" >&2
         exit "$CSV_PARSE_ERROR"
     fi
 
@@ -34,29 +34,29 @@ file="$1"
             [[ ! "$nonce" =~ ^[0-9a-f]{16}$ ]] || \
             [[ ! "$prev" =~ ^[0-9a-f]{64}$ ]] || \
             [[ ! "$mroot" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "riga $riga: campo malformato" >&2
+            echo "line $riga: malformed field" >&2
             [[ $primo_errore -eq 0 ]] && primo_errore="$INVALID_BLOCK"
 
         fi
 
         # la radice di merkle
         atteso=$(merkle_root_of "$txs")
-        if [[ "$atteso" != $mroot ]]; then
-            echo "riga $riga: merkle root non valida" >&2
+        if [[ "$atteso" != "$mroot" ]]; then
+            echo "line $riga: invalid merkle root" >&2
             [[ $primo_errore -eq 0 ]] && primo_errore="$INVALID_BLOCK"
         fi
 
         # gli indici
         if [[ $blocchi -eq 1 ]]; then
             if [[ "$idx" != "0000000000000000" ]]; then
-                echo "riga $riga: indice errato" >&2
+                echo "line $riga: wrong index" >&2
                 [[ $primo_errore -eq 0 ]] && primo_errore="$INVALID_BLOCK"
             fi
             idx_dec_precedente=0
         else
             idx_dec=$((16#$idx))
             if [[ $idx_dec -ne $((idx_dec_precedente + 1)) ]]; then
-            echo "riga $riga: indice errato" >&2
+            echo "line $riga: wrong index" >&2
             [[ $primo_errore -eq 0 ]] && primo_errore="$INVALID_BLOCK"
             fi
             idx_dec_precedente=$idx_dec
@@ -65,7 +65,7 @@ file="$1"
         # il collegamento
         if [[ $blocchi -gt 1 ]]; then
             if [[ "$prev" != "$hash_precedente" ]]; then
-            echo "riga $riga: collegamento rotto" >&2
+            echo "line $riga: broken link" >&2
             [[ $primo_errore -eq 0 ]] && primo_errore="$CHAIN_MISMATCH"
             fi
         fi

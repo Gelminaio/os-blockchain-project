@@ -1,6 +1,5 @@
-//
-// Created by faitn on 26/08/2026.
-//
+//parent process: prepares the bootstrap chain and the fifos, spawns nodes,
+//miners and clients, then runs the CLI and shuts everything down
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -16,14 +15,14 @@
 #include "block.h"
 #include "cli.h"
 #include "crypto.h"
+#include "transaction.h"
 
 static proc_t g_procs[MAX_NODES + MAX_MINERS + MAX_CLIENTS];
 static size_t g_nprocs = 0;
-/*volatile sig_atomic_t g_should_stop = 0;*/
 
 static int parse_args(int argc, char *argv[], params_t *p) {
     if (argc < 4) {
-        fprintf(stderr, "Uso: %s <num_nodes> <num_miners> <num_clients> [tx_freq] [difficulty] [csv_path]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <num_nodes> <num_miners> <num_clients> [tx_freq] [difficulty] [csv_path]\n", argv[0]);
         return ARGS_ERROR;
     }
 
@@ -34,7 +33,7 @@ static int parse_args(int argc, char *argv[], params_t *p) {
     p->difficulty = (argc > 5) ? atoi(argv[5]) : DEFAULT_DIFFICULTY;
 
     if (p->num_nodes < 1 || p->num_miners < 1 || p->num_clients < 0) {
-        fprintf(stderr, "Errore: i nodi e i miner devono essere almeno 1, i client almeno 0.\n");
+        fprintf(stderr, "Error: nodes and miners must be at least 1, clients at least 0.\n");
         return ARGS_ERROR;
     }
 
@@ -107,7 +106,16 @@ int main(int argc, char *argv[]) {
         return ARGS_ERROR;
     }
 
-    log_init("main");
+    if (log_init("main") != OK) {
+        fprintf(stderr, "Cannot open the log file\n");
+        return FILE_ERROR;
+    }
+
+    if (transaction_init() != OK) {
+        log_msg(LOG_ERROR, "Cannot initialize the transactions");
+        log_close();
+        return SYS_ERROR;
+    }
 
     struct sigaction sa_chld, sa_stop;
     memset(&sa_chld, 0, sizeof(sa_chld));
@@ -126,7 +134,10 @@ int main(int argc, char *argv[]) {
     if (initial_csv != NULL) {
         int load_res = csv_load(initial_csv, &chain);
         if (load_res != OK) {
-            fprintf(stderr, "Errore caricamento CSV iniziale\n");
+            fprintf(stderr, "Error loading the initial CSV\n");
+            chain_free(&chain);
+            transaction_cleanup();
+            log_close();
             return load_res;
         }
     }
@@ -143,16 +154,41 @@ int main(int argc, char *argv[]) {
         b.nonce = 0;
 
         const char *genesis_txs[] = { b.txs[0] };
-        merkle_root(genesis_txs, 1, b.merkle_root);
+        if (merkle_root(genesis_txs, 1, b.merkle_root) != OK) {
+            log_msg(LOG_ERROR, "Error computing the merkle root of the genesis block");
+            chain_free(&chain);
+            transaction_cleanup();
+            log_close();
+            return INVALID_BLOCK;
+        }
 
-        chain.v[0] = b;
-        chain.len = 1;
+        //chain_init leaves v == NULL and cap == 0: only chain_append allocates
+        if (chain_append(&chain, &b) != APPEND_OK) {
+            log_msg(LOG_ERROR, "Cannot create the genesis block");
+            chain_free(&chain);
+            transaction_cleanup();
+            log_close();
+            return INVALID_BLOCK;
+        }
     }
-    csv_save(BOOTSTRAP_CSV, &chain);
+
+    if (csv_save(BOOTSTRAP_CSV, &chain) != OK) {
+        log_msg(LOG_ERROR, "Error saving the bootstrap chain");
+        chain_free(&chain);
+        transaction_cleanup();
+        log_close();
+        return FILE_ERROR;
+    }
 
 
     int fds[MAX_NODES + MAX_MINERS + 1];
-    ipc_create_all(p.num_nodes, p.num_miners, fds);
+    if (ipc_create_all(p.num_nodes, p.num_miners, fds) != OK) {
+        log_msg(LOG_ERROR, "Error creating the fifos");
+        chain_free(&chain);
+        transaction_cleanup();
+        log_close();
+        return IPC_ERROR;
+    }
 
 
 
@@ -213,11 +249,16 @@ int main(int argc, char *argv[]) {
     }
 
 
-    cli_run(g_procs, g_nprocs, &p);
+    int cli_res = cli_run(g_procs, g_nprocs, &p);
+    if (cli_res != OK) {
+        log_msg(LOG_ERROR, "The CLI ended with an error");
+    }
 
     shutdown_all(g_procs, g_nprocs);
     ipc_unlink_all(p.num_nodes, p.num_miners);
 
+    chain_free(&chain);
+    transaction_cleanup();
     log_close();
-    return 0;
+    return cli_res;
 }
