@@ -6,27 +6,27 @@
 #include <errno.h>
 #include <unistd.h>
 
-#include "include/crypto.h"
-#include "include/config.h"
-#include "include/errors.h"
-#include "include/common.h"
-#include "include/ipc.h"
-#include "include/block.h"
-#include "include/logging.h"
-#include "include/transaction.h"
+#include "crypto.h"
+#include "config.h"
+#include "errors.h"
+#include "common.h"
+#include "ipc.h"
+#include "block.h"
+#include "logging.h"
+#include "transaction.h"
 
 #define MEMPOOL_SIZE 64
-static char mempool[MEMPOOL_SIZE][MAX_TX_LENGTH];
+static char mempool[MEMPOOL_SIZE][MAX_TX_LEN];
 static int mempool_count = 0;
 
 static void mempool_add(const char *txs){
         
     if(mempool_count < MEMPOOL_SIZE){
-        strncpy(mempool[mempool_count], txs, MAX_TX_LENGTH - 1);
-        mempool[mempool_count][MAX_TX_LENGTH - 1] = '\0';
+        strncpy(mempool[mempool_count], txs, MAX_TX_LEN - 1);
+        mempool[mempool_count][MAX_TX_LEN - 1] = '\0';
         mempool_count ++;
     }else{
-        log_msg(LOG_WARN, "Mempool piena transazione scartata");
+        log_msg(LOG_WARNING, "Mempool full, transaction discarded");
     }
 }
 
@@ -47,8 +47,8 @@ static void mempool_remove(const char *tx){
 int main(int argc, char *argv[]){
 
     if(argc != 6){
-        fprintf(stderr, "Uso: %s <idx> <num_nodi> <num_miner> <difficulty> <bootstrap_csv>\n", argv[0]);
-        return 1;
+        fprintf(stderr, "Usage: %s <idx> <num_nodes> <num_miners> <difficulty> <bootstrap_csv>\n", argv[0]);
+        return ARGS_ERROR;
     }
 
     int idx = atoi(argv[1]);
@@ -56,47 +56,106 @@ int main(int argc, char *argv[]){
     int num_miner = atoi(argv[3]);
     int difficulty = atoi(argv[4]);
     const char *bootstrap_csv = argv[5];
+    (void)num_miner; //parsed for the command line, not used here
 
-    log_init("miner");
+    //difficulty is used as "random() % difficulty": 0 would be a division by zero
+    if(num_nodi < 1 || num_nodi > MAX_NODES || difficulty < 1){
+        fprintf(stderr, "Invalid arguments: num_nodes must be 1..%d, difficulty at least 1\n", MAX_NODES);
+        return ARGS_ERROR;
+    }
+
+    if(log_init("miner") != OK){
+        fprintf(stderr, "Cannot open the log file\n");
+        return FILE_ERROR;
+    }
     ipc_install_handlers(ROLE_MINER);
 
     srandom(getpid() ^ time(NULL));
-    transaction_init();
+
+    if(transaction_init() != OK){
+        log_msg(LOG_ERROR, "Cannot initialize the transactions");
+        log_close();
+        return SYS_ERROR;
+    }
+
     int inbox;
 
     if(ipc_open_inbox(ROLE_MINER, idx, 1, &inbox) != OK){
-        log_msg(LOG_ERROR, "Impossibile aprire inbox miner");
-        return 1;
+        log_msg(LOG_ERROR, "Cannot open the miner inbox");
+        transaction_cleanup();
+        log_close();
+        return IPC_ERROR;
     }
 
     int *node_fds = malloc(num_nodi *sizeof(int));
+    if(node_fds == NULL){
+        log_msg(LOG_ERROR, "Cannot allocate the node descriptors");
+        close(inbox);
+        transaction_cleanup();
+        log_close();
+        return SYS_ERROR;
+    }
+
     for(int i = 0; i < num_nodi; i++){
-        ipc_open_sender(ROLE_NODE, i, &node_fds[i]);
+        if(ipc_open_sender(ROLE_NODE, i, &node_fds[i]) != OK){
+            char log_buf[256];
+            snprintf(log_buf, sizeof(log_buf), "Cannot open the FIFO to the node %d", i);
+            log_msg(LOG_ERROR, log_buf);
+            //close the descriptors already opened
+            for(int k = 0; k < i; k++){
+                close(node_fds[k]);
+            }
+            free(node_fds);
+            close(inbox);
+            transaction_cleanup();
+            log_close();
+            return IPC_ERROR;
+        }
     }
 
     chain_t chain;
+    chain_init(&chain); //csv_load expects an initialized and empty chain
     if(csv_load(bootstrap_csv, &chain) != OK){
-        log_msg(LOG_ERROR, "Errore caricamento catena");
-        return 1;
+        log_msg(LOG_ERROR, "Error loading the chain");
+        chain_free(&chain);
+        for(int i = 0; i < num_nodi; i++){
+            close(node_fds[i]);
+        }
+        free(node_fds);
+        close(inbox);
+        transaction_cleanup();
+        log_close();
+        return FILE_ERROR;
     }
     msg_t msg;
 
-    // creo ciclo principale
+    // main loop
     while(!g_should_stop){
-        while(ipc_recv_nb(inbox, &msg) > 0){
+        while(ipc_recv_nb(inbox, &msg) == OK){
             if(msg.type == MSG_TX){
-                if(transaction_is_valid(msg.payload)){
+                if(transaction_is_valid(msg.payload) == OK){
                     mempool_add(msg.payload);
                 }
             }else if (msg.type == MSG_BLOCK){
                 block_t b_arrivato;
                 if(block_from_csv_row(msg.payload, &b_arrivato) == OK){
+                    //chain_append can realloc and move the array, so comparing the
+                    //pointers is not reliable: save the tip index before the append
                     const block_t *vecchia_punta = chain_tip(&chain);
-                    if(chain_append(&chain, &b_arrivato) == APPEND_OK){
+                    int aveva_punta = (vecchia_punta != NULL);
+                    uint64_t vecchio_indice = aveva_punta ? vecchia_punta->index : 0;
+
+                    append_result_t res = chain_append(&chain, &b_arrivato);
+
+                    if(res == APPEND_OK || res == APPEND_REPLACED){
                         const block_t *nuova_punta = chain_tip(&chain);
-                        if(nuova_punta != vecchia_punta){
-                            for(int i = 0; i < nuova_punta->tx_count; i++){
-                                mempool_remove(nuova_punta->transactions[i]);
+                        //APPEND_REPLACED swaps the tip keeping the same index, so it
+                        //changes the tip even if the index doesn't move
+                        int punta_cambiata = (res == APPEND_REPLACED) || !aveva_punta ||
+                                             (nuova_punta != NULL && nuova_punta->index != vecchio_indice);
+                        if(nuova_punta != NULL && punta_cambiata){
+                            for(size_t i = 0; i < nuova_punta->tx_count; i++){
+                                mempool_remove(nuova_punta->txs[i]);
                             }
                         }
                     }
@@ -112,21 +171,37 @@ int main(int argc, char *argv[]){
         }
 
         block_t candidato;
+        memset(&candidato, 0, sizeof(candidato));
+
         const block_t *tip = chain_tip(&chain);
+        if(tip == NULL){
+            log_msg(LOG_WARNING, "Empty chain, nothing to mine on");
+            struct timespec req ={1,  0};
+            nanosleep(&req, NULL);
+            continue;
+        }
+
         candidato.index = tip-> index + 1;
-        block_hash(tip, candidato.prev_hash);
+        if(block_hash(tip, candidato.prev_hash) != OK){
+            log_msg(LOG_WARNING, "Error computing the hash of the tip");
+            continue;
+        }
         candidato.timestamp = (uint64_t)time(NULL);
         candidato.nonce = 0;
 
-        candidato.tx_count = (mempool_count > MAX_TX_PER_BLOCK) ? MAX_TX_PER_BLOCK : mempool_count;
+        candidato.tx_count = (mempool_count > MAX_TX_PER_BLOCK) ? MAX_TX_PER_BLOCK : (size_t)mempool_count;
         const char *tx_ptrs[MAX_TX_PER_BLOCK];
 
-        for(int i = 0; i < candidato.tx_count; i++){
-            strcpy(candidato.transactions[i], mempool[i]);
-            tx_ptrs[i] = candidato.transactions[i];
+        for(size_t i = 0; i < candidato.tx_count; i++){
+            strcpy(candidato.txs[i], mempool[i]);
+            tx_ptrs[i] = candidato.txs[i];
         }
 
-        merkle_root(tx_ptrs, candidato.tx_count, candidato.merkle_root);
+        if(merkle_root(tx_ptrs, candidato.tx_count, candidato.merkle_root) != OK){
+            log_msg(LOG_WARNING, "Error computing the merkle root of the candidate");
+            continue;
+        }
+
         int minato = 0;
         while( !g_should_stop && !g_abort_mining){
             int sleep_time = MINE_SLEEP_MIN + (random() % (MINE_SLEEP_MAX - MINE_SLEEP_MIN +1));
@@ -149,35 +224,48 @@ int main(int argc, char *argv[]){
 
         if(minato && !g_should_stop){
             char b_hash[65];
-            block_hash(&candidato, b_hash);
+            if(block_hash(&candidato, b_hash) != OK){
+                log_msg(LOG_WARNING, "Error computing the hash of the mined block");
+                continue;
+            }
     
             char log_buf[256];
-            snprintf(log_buf, sizeof(log_buf), "Trovato blocco %llu (hash: %s)", (unsigned long long)candidato.index, b_hash);
+            snprintf(log_buf, sizeof(log_buf), "Found block %llu (hash: %s)", (unsigned long long)candidato.index, b_hash);
         
             log_msg(LOG_INFO, log_buf);
 
-            // costruisco il messagio CSV
+            // build the CSV message
             msg_t out_msg;
+            memset(&out_msg, 0, sizeof(out_msg));
             out_msg.type = MSG_BLOCK;
             out_msg.sender_role = ROLE_MINER;
             out_msg.sender_idx = idx;
-            block_to_csv_row(&candidato, out_msg.payload, sizeof(out_msg.payload));
+            if(block_to_csv_row(&candidato, out_msg.payload, sizeof(out_msg.payload)) != OK){
+                log_msg(LOG_WARNING, "Error serializing the mined block");
+                continue;
+            }
+            out_msg.payload_len = strlen(out_msg.payload);
         
             for(int i = 0; i < num_nodi; i++){
                 ipc_send(node_fds[i], &out_msg);
             }
 
-            for(int i = 0; i < candidato.tx_count; i++){
-                mempool_remove(candidato.transactions[i]);
+            for(size_t i = 0; i < candidato.tx_count; i++){
+                mempool_remove(candidato.txs[i]);
             }
         }
     }
-    log_close();
+
+    //clean close
+    chain_free(&chain);
+    close(inbox);
+    for(int i = 0; i < num_nodi; i++){
+        close(node_fds[i]);
+    }
     free(node_fds);
+    transaction_cleanup();
+    log_msg(LOG_INFO, "Miner terminated successfully");
+    log_close();
     return 0;
 
 }
-
-
-
-
