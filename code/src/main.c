@@ -19,7 +19,7 @@
 
 static proc_t g_procs[MAX_NODES + MAX_MINERS + MAX_CLIENTS];
 static size_t g_nprocs = 0;
-volatile sig_atomic_t g_should_stop = 0;
+/*volatile sig_atomic_t g_should_stop = 0;*/
 
 static int parse_args(int argc, char *argv[], params_t *p) {
     if (argc < 4) {
@@ -30,7 +30,7 @@ static int parse_args(int argc, char *argv[], params_t *p) {
     p->num_nodes = atoi(argv[1]);
     p->num_miners = atoi(argv[2]);
     p->num_clients = atoi(argv[3]);
-    p->tx_freq = (argc > 4) ? atoi(argv[4]) : DEFAULT_TX_FREQ;
+    p->transaction_frequency = (argc > 4) ? atoi(argv[4]) : DEFAULT_TX_FREQ;
     p->difficulty = (argc > 5) ? atoi(argv[5]) : DEFAULT_DIFFICULTY;
 
     if (p->num_nodes < 1 || p->num_miners < 1 || p->num_clients < 0) {
@@ -131,10 +131,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (chain.size == 0) {
+    if (chain.len == 0) {
         block_t b;
         memset(&b, 0, sizeof(b));
-        b.idx = 0;
+        b.index = 0;
         b.timestamp = time(NULL);
         memset(b.prev_hash, '0', 64);
         b.prev_hash[64] = '\0';
@@ -145,8 +145,8 @@ int main(int argc, char *argv[]) {
         const char *genesis_txs[] = { b.txs[0] };
         merkle_root(genesis_txs, 1, b.merkle_root);
 
-        chain.blocks[0] = b;
-        chain.size = 1;
+        chain.v[0] = b;
+        chain.len = 1;
     }
     csv_save(BOOTSTRAP_CSV, &chain);
 
@@ -162,7 +162,7 @@ int main(int argc, char *argv[]) {
     snprintf(buf_nodi, sizeof(buf_nodi), "%d", p.num_nodes);
     snprintf(buf_miner, sizeof(buf_miner), "%d", p.num_miners);
     snprintf(buf_diff, sizeof(buf_diff), "%d", p.difficulty);
-    snprintf(buf_freq, sizeof(buf_freq), "%d", p.tx_freq);
+    snprintf(buf_freq, sizeof(buf_freq), "%d", p.transaction_frequency);
 
     for (int i = 0; i < p.num_miners; i++) {
         char buf_idx[16];

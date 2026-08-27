@@ -42,7 +42,7 @@ int transaction_is_valid(const char *s) {
     return INVALID_TRANSACTION;
 }
 
-static void random_name(char *buf, size_t cap) {
+/*static void random_name(char *buf, size_t cap) {
     const char *alfabeto = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     size_t alfabeto_len = strlen(alfabeto);
 
@@ -57,7 +57,7 @@ static void random_name(char *buf, size_t cap) {
     }
 
     buf[len] = '\0';
-}
+}*/
 
 int transaction_generate_random(char *out, size_t cap) {
     static const char *nomi[] = {
