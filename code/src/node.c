@@ -233,6 +233,15 @@ static void handle_block(const msg_t *m) {
             break;
         }
 
+        case APPEND_LOST:
+            //two miners found a block for the same index: block.c has already
+            //logged both hashes. The chain keeps the winner, this one is
+            //dropped without propagating it, and the miner that made it puts
+            //its transactions back in the mempool
+            snprintf(g_log, sizeof(g_log), "Concurrent block %llu lost the tie breaker, discarded", (unsigned long long)b.index);
+            log_msg(LOG_INFO, g_log);
+            break;
+
         case APPEND_INVALID:
             //the reason has already been logged by block.c
             log_msg(LOG_WARNING, "Discarded block with APPEND_INVALID");

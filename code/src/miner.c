@@ -44,6 +44,95 @@ static void mempool_remove(const char *tx) {
     }
 }
 
+//blocks we mined and already sent, waiting to find out how they ended up. Their
+//transactions are out of the mempool, so a block that loses the tie breaker
+//would take them down with it: the clients send every transaction to a single
+//miner, nobody else has a copy and nobody else would ever mine it again.
+#define PENDING_MAX 8
+
+typedef struct {
+    uint64_t index;
+    char hash[65];
+    char txs[MAX_TX_PER_BLOCK][MAX_TX_LEN];
+    size_t tx_count;
+} pending_t;
+
+static pending_t pending[PENDING_MAX];
+static int pending_count = 0;
+
+static void pending_requeue(const pending_t *p) {
+    for (size_t i = 0; i < p->tx_count; i++) {
+        mempool_add(p->txs[i]);
+    }
+}
+
+static void pending_drop(int i) {
+    for (int j = i; j < pending_count - 1; j++) {
+        pending[j] = pending[j + 1];
+    }
+    pending_count--;
+}
+
+static void pending_add(const block_t *b, const char *hash) {
+    if (pending_count == PENDING_MAX) {
+        //the oldest one never came back from the nodes: give its transactions
+        //another chance instead of forgetting about them
+        pending_requeue(&pending[0]);
+        pending_drop(0);
+    }
+
+    pending_t *p = &pending[pending_count++];
+    p->index = b->index;
+    snprintf(p->hash, sizeof(p->hash), "%s", hash);
+    p->tx_count = b->tx_count;
+    for (size_t i = 0; i < b->tx_count; i++) {
+        snprintf(p->txs[i], MAX_TX_LEN, "%s", b->txs[i]);
+    }
+}
+
+//asks the chain what it actually kept at the index of each of our candidates.
+//A block of ours that was beaten gives its transactions back to the mempool;
+//one that is sitting on the tip stays pending, because a block with an even
+//lower hash can still replace it and we would lose track of it
+static void pending_settle(const chain_t *chain) {
+    const block_t *tip = chain_tip(chain);
+    char log_buf[256];
+    char kept_hash[65];
+    int i = 0;
+
+    if (tip == NULL) {
+        return;
+    }
+
+    while (i < pending_count) {
+        const block_t *kept = chain_find_index(chain, pending[i].index);
+
+        if (kept == NULL || block_hash(kept, kept_hash) != OK) {
+            i++; //that index is not decided yet, keep waiting
+            continue;
+        }
+
+        if (strcmp(kept_hash, pending[i].hash) == 0) {
+            //ours is the one in the chain, but only a block further ahead makes
+            //it final: while it is the tip a lower hash could still replace it
+            if (tip->index > pending[i].index) {
+                pending_drop(i);
+            } else {
+                i++;
+            }
+            continue;
+        }
+
+        //beaten, and the tie breaker is deterministic on the lowest hash, so it
+        //can never win it back: the transactions go home
+        snprintf(log_buf, sizeof(log_buf), "Our block %llu lost the tie breaker: %zu transactions back in the mempool",
+                 (unsigned long long)pending[i].index, pending[i].tx_count);
+        log_msg(LOG_INFO, log_buf);
+        pending_requeue(&pending[i]);
+        pending_drop(i);
+    }
+}
+
 //drains everything pending in the inbox: transactions go into the mempool,
 //blocks are appended to the chain. Called both between blocks and inside the
 //attempts loop, so the fifo keeps being read while mining and the clients
@@ -79,6 +168,9 @@ static int drain_inbox(int inbox, chain_t *chain) {
                         for (size_t i = 0; i < new_tip->tx_count; i++) {
                             mempool_remove(new_tip->txs[i]);
                         }
+
+                        //the chain moved: see how our own candidates ended up
+                        pending_settle(chain);
                         tip_moved = 1;
                     }
                 }
@@ -272,6 +364,11 @@ int main(int argc, char *argv[]) {
             for (int i = 0; i < num_nodes; i++) {
                 ipc_send(node_fds[i], &out_msg);
             }
+
+            //the transactions leave the mempool so the next candidate does not
+            //mine them a second time, but this block can still lose a tie
+            //breaker: keep it until the chain tells us how it ended
+            pending_add(&candidate, b_hash);
 
             for (size_t i = 0; i < candidate.tx_count; i++) {
                 mempool_remove(candidate.txs[i]);

@@ -23,7 +23,10 @@ typedef struct {
     size_t cap;
 } chain_t;
 
-typedef enum { APPEND_OK, APPEND_REPLACED, APPEND_DUP, APPEND_STALE, APPEND_AHEAD, APPEND_INVALID } append_result_t;
+//APPEND_LOST is not APPEND_INVALID: the block is perfectly well formed, it just
+//arrived on the losing side of a fork. Keeping the two apart matters because
+//APPEND_INVALID means corruption to every caller, csv_load included
+typedef enum { APPEND_OK, APPEND_REPLACED, APPEND_DUP, APPEND_STALE, APPEND_AHEAD, APPEND_LOST, APPEND_INVALID } append_result_t;
 
 void chain_init(chain_t *c);
 void chain_free(chain_t *c);
