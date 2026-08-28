@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <errno.h>
 #include <time.h>
 #include "errors.h"
 #include "config.h"
@@ -161,6 +162,19 @@ int main(int argc, char *argv[]) {
     chain_t chain;
     chain_init(&chain);
     const char *initial_csv = (argc > 6) ? argv[6] : NULL;
+    char log_buf[MAX_PATH_LEN + 128];
+
+    //a path that simply does not exist is not an error: the run starts from a
+    //new genesis block, like when no csv is passed at all. Every other failure
+    //(unreadable file, bad header, malformed or inconsistent blocks) must still
+    //stop the run, so we only skip the load on ENOENT and let csv_load report
+    //anything else
+    if (initial_csv != NULL && access(initial_csv, F_OK) != 0 && errno == ENOENT) {
+        snprintf(log_buf, sizeof(log_buf), "Initial CSV %s does not exist: starting from a new genesis block", initial_csv);
+        log_msg(LOG_INFO, log_buf);
+        printf("%s\n", log_buf);
+        initial_csv = NULL;
+    }
 
     if (initial_csv != NULL) {
         int load_res = csv_load(initial_csv, &chain);
@@ -271,9 +285,26 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < p.num_clients; i++) {
         char buf_idx[16];
         snprintf(buf_idx, sizeof(buf_idx), "%d", i);
-        char *args[] = { "client", buf_idx, buf_miner, buf_freq, NULL };
+        //the clients get the miner pids for the same reason the nodes do: it is
+        //the only way for them to notice that a miner is gone and stop sending
+        //transactions into a fifo nobody reads anymore
+        char **args = malloc((4 + p.num_miners + 1) * sizeof(char*));
+        args[0] = "client"; args[1] = buf_idx;
+        args[2] = buf_miner; args[3] = buf_freq;
+
+        int arg_idx = 4;
+        for (size_t m = 0; m < g_nprocs; m++) {
+            if (g_procs[m].role == ROLE_MINER) {
+                args[arg_idx] = malloc(16);
+                snprintf(args[arg_idx++], 16, "%d", g_procs[m].pid);
+            }
+        }
+        args[arg_idx] = NULL;
 
         pid_t pid = spawn_child("./client", args);
+        for (int m = 4; m < arg_idx; m++) free(args[m]);
+        free(args);
+
         if (pid > 0) {
             g_procs[g_nprocs++] = (proc_t){ pid, ROLE_CLIENT, i, 1 };
         }

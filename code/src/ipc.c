@@ -1,9 +1,9 @@
-#define _POSIX_C_SOURCE 200809L
 //fifo based ipc: paths, setup, send and receive, signal handlers
 
 #include "ipc.h"
 #include "config.h"
 #include "errors.h"
+#include "common.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -45,6 +45,24 @@ int ipc_fifo_path(char *out, size_t cap, role_t role, int idx) {
     }
 }
 
+//the default fifo capacity on Linux is 64 KiB, which is only 16 messages of
+//sizeof(msg_t): a burst of transactions fills it in a fraction of a second and
+//the senders, non blocking by design, start getting EAGAIN. Enlarging the
+//buffer is best effort: F_SETPIPE_SZ is a Linux extension, the kernel caps the
+//size at /proc/sys/fs/pipe-max-size, so we try the target and halve it until
+//it is accepted. If none is, we simply keep the default capacity.
+static void ipc_grow_fifo(int fd) {
+#ifdef F_SETPIPE_SZ
+    for (int size = FIFO_CAPACITY; size >= FIFO_CAPACITY_MIN; size /= 2) {
+        if (fcntl(fd, F_SETPIPE_SZ, size) != -1) {
+            return;
+        }
+    }
+#else
+    (void)fd; //not Linux: the fifos keep whatever capacity the system gives them
+#endif
+}
+
 // called by the parent before creating the children with fork()
 int ipc_create_all(int n_nodes, int n_miner, int *fds_out) {
 
@@ -78,6 +96,10 @@ int ipc_create_all(int n_nodes, int n_miner, int *fds_out) {
             return IPC_ERROR;
         }
 
+        //all the fds of a fifo share one kernel buffer, and the parent keeps this
+        //one open for the whole run, so the new size holds for the children too
+        ipc_grow_fifo(fd);
+
         // save the descriptor in the array
         fds_out[current_fd_index++] = fd;
     }
@@ -101,6 +123,10 @@ int ipc_create_all(int n_nodes, int n_miner, int *fds_out) {
             return IPC_ERROR;
         }
 
+        //all the fds of a fifo share one kernel buffer, and the parent keeps this
+        //one open for the whole run, so the new size holds for the children too
+        ipc_grow_fifo(fd);
+
         // save the descriptor in the array
         fds_out[current_fd_index++] = fd;
     }
@@ -121,6 +147,10 @@ int ipc_create_all(int n_nodes, int n_miner, int *fds_out) {
         perror("open O_RDWR failed for parent");
         return IPC_ERROR;
     }
+
+    //all the fds of a fifo share one kernel buffer, and the parent keeps this
+    //one open for the whole run, so the new size holds for the children too
+    ipc_grow_fifo(fd);
 
     // save the descriptor in the array
     fds_out[current_fd_index++] = fd;

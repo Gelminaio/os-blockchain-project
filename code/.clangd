@@ -1,0 +1,3 @@
+# fallback per gli header aperti da soli (non sono in compile_commands.json)
+CompileFlags:
+  Add: [-Iinclude, -D_GNU_SOURCE, -Wall, -Wextra]

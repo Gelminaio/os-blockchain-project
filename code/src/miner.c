@@ -16,7 +16,7 @@
 #include "logging.h"
 #include "transaction.h"
 
-#define MEMPOOL_SIZE 64
+#define MEMPOOL_SIZE 1024
 static char mempool[MEMPOOL_SIZE][MAX_TX_LEN];
 static int mempool_count = 0;
 
@@ -42,6 +42,50 @@ static void mempool_remove(const char *tx) {
         }
 
     }
+}
+
+//drains everything pending in the inbox: transactions go into the mempool,
+//blocks are appended to the chain. Called both between blocks and inside the
+//attempts loop, so the fifo keeps being read while mining and the clients
+//stop hitting EAGAIN. Returns 1 if the tip moved, meaning a candidate built
+//on the old tip is now stale, 0 otherwise.
+static int drain_inbox(int inbox, chain_t *chain) {
+    msg_t msg;
+    int tip_moved = 0;
+
+    while (ipc_recv_nb(inbox, &msg) == OK) {
+        if (msg.type == MSG_TX) {
+            if (transaction_is_valid(msg.payload) == OK) {
+                mempool_add(msg.payload);
+            }
+        } else if (msg.type == MSG_BLOCK) {
+            block_t incoming;
+            if (block_from_csv_row(msg.payload, &incoming) == OK) {
+                //chain_append can realloc and move the array, so comparing the
+                //pointers is not reliable: save the tip index before the append
+                const block_t *old_tip = chain_tip(chain);
+                int had_tip = (old_tip != NULL);
+                uint64_t old_index = had_tip ? old_tip->index : 0;
+
+                append_result_t res = chain_append(chain, &incoming);
+
+                if (res == APPEND_OK || res == APPEND_REPLACED) {
+                    const block_t *new_tip = chain_tip(chain);
+                    //APPEND_REPLACED swaps the tip keeping the same index, so it
+                    //changes the tip even if the index doesn't move
+                    int tip_changed = (res == APPEND_REPLACED) || !had_tip ||
+                                         (new_tip != NULL && new_tip->index != old_index);
+                    if (new_tip != NULL && tip_changed) {
+                        for (size_t i = 0; i < new_tip->tx_count; i++) {
+                            mempool_remove(new_tip->txs[i]);
+                        }
+                        tip_moved = 1;
+                    }
+                }
+            }
+        }
+    }
+    return tip_moved;
 }
 
 int main(int argc, char *argv[]) {
@@ -127,41 +171,11 @@ int main(int argc, char *argv[]) {
         log_close();
         return FILE_ERROR;
     }
-    msg_t msg;
 
     // main loop
     while (!g_should_stop) {
-        while (ipc_recv_nb(inbox, &msg) == OK) {
-            if (msg.type == MSG_TX) {
-                if (transaction_is_valid(msg.payload) == OK) {
-                    mempool_add(msg.payload);
-                }
-            } else if (msg.type == MSG_BLOCK) {
-                block_t incoming;
-                if (block_from_csv_row(msg.payload, &incoming) == OK) {
-                    //chain_append can realloc and move the array, so comparing the
-                    //pointers is not reliable: save the tip index before the append
-                    const block_t *old_tip = chain_tip(&chain);
-                    int had_tip = (old_tip != NULL);
-                    uint64_t old_index = had_tip ? old_tip->index : 0;
-
-                    append_result_t res = chain_append(&chain, &incoming);
-
-                    if (res == APPEND_OK || res == APPEND_REPLACED) {
-                        const block_t *new_tip = chain_tip(&chain);
-                        //APPEND_REPLACED swaps the tip keeping the same index, so it
-                        //changes the tip even if the index doesn't move
-                        int tip_changed = (res == APPEND_REPLACED) || !had_tip ||
-                                             (new_tip != NULL && new_tip->index != old_index);
-                        if (new_tip != NULL && tip_changed) {
-                            for (size_t i = 0; i < new_tip->tx_count; i++) {
-                                mempool_remove(new_tip->txs[i]);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        //the candidate does not exist yet here, so a moved tip changes nothing
+        (void)drain_inbox(inbox, &chain);
 
         //a SIGUSR1 that arrived while draining refers to a block we have just
         //read, so clear it here: otherwise the attempts loop below would exit
@@ -213,6 +227,10 @@ int main(int argc, char *argv[]) {
             sleep(sleep_time);
             if (g_should_stop) break;
             if (g_abort_mining) break;
+            //keep reading while mining: incoming transactions land in the
+            //mempool for the next block, and a block that moves the tip makes
+            //this candidate stale without having to rely on SIGUSR1 alone
+            if (drain_inbox(inbox, &chain)) break;
 
             if ((random() % difficulty) == 0) {
                 mined = 1;

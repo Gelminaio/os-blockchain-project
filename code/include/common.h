@@ -1,11 +1,11 @@
 #ifndef COMMON_H
 #define COMMON_H
-
 #include "config.h"
 #include <stdint.h>
 #include <sys/types.h>
 #include <signal.h>
 #include <stddef.h>
+
 
 typedef char hex64_t[HASH_HEX_LEN + 1];
 typedef char hex16_t[HEX16_LEN + 1];

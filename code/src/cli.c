@@ -24,6 +24,22 @@ static const char* role_to_string(role_t role) {
     }
 }
 
+//the parent keeps every fifo open, so a send to a dead miner succeeds and the
+//transaction is lost: pick the next miner the process table still reports as
+//alive, or -1 if there is none left
+static int next_alive_miner(const proc_t *tab, size_t n, size_t *cursor, int num_miners) {
+    for (int k = 0; k < num_miners; k++) {
+        int cand = (int)((*cursor + (size_t)k) % (size_t)num_miners);
+        for (size_t i = 0; i < n; i++) {
+            if (tab[i].role == ROLE_MINER && tab[i].idx == cand && tab[i].alive) {
+                *cursor = (size_t)cand + 1;
+                return cand;
+            }
+        }
+    }
+    return -1;
+}
+
 int cli_run(proc_t *tab, size_t n, const params_t *p) {
     if (n > MAX_NODES + MAX_MINERS + MAX_CLIENTS || tab == NULL || p == NULL) {
         return ARGS_ERROR;
@@ -184,13 +200,16 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
 
             msg.payload_len = strlen(msg.payload);
 
-            size_t miner_idx = current_miner % p->num_miners;
-            current_miner++;
-            if (ipc_send(fd_miner[miner_idx], &msg) != OK) {
-                printf("IPC error: impossible to send the transaction to the miner %zu.\n", miner_idx);
+            int miner_idx = next_alive_miner(tab, n, &current_miner, p->num_miners);
+            if (miner_idx < 0) {
+                printf("No miner is alive: the transaction was not sent.\n");
                 continue;
             }
-            printf("Valid transaction. Sent to the miner %zu.\n", miner_idx);
+            if (ipc_send(fd_miner[miner_idx], &msg) != OK) {
+                printf("IPC error: impossible to send the transaction to the miner %d.\n", miner_idx);
+                continue;
+            }
+            printf("Valid transaction. Sent to the miner %d.\n", miner_idx);
         }
         else if (strncmp(input, "request blockchain", 18) == 0) {
             char filter[MSG_PAYLOAD_MAX] = "ALL";

@@ -10,6 +10,8 @@
 #define MAX_SERIAL_LEN (HEX16_LEN * 3 + HASH_HEX_LEN * 2 + MAX_TX_PER_BLOCK * (MAX_TX_LEN - 1) + (MAX_TX_PER_BLOCK - 1) * 2 + 1) //max S(B) length, (16+16+64+64+16) + transactions separated by "::" and the terminator
 #define MAX_CSV_ROW_LEN (MAX_SERIAL_LEN + 5) //csv line is S(B) more 5 commas that separate the 6 fields
 #define FIFO_DIR "fifo"
+#define FIFO_CAPACITY (1024 * 1024) //1 MiB = 256 messages of sizeof(msg_t); the kernel caps it at /proc/sys/fs/pipe-max-size
+#define FIFO_CAPACITY_MIN 65536 //the Linux default, no point in going below it
 #define MINE_SLEEP_MIN 1
 #define MINE_SLEEP_MAX 5
 #define DEFAULT_DIFFICULTY 12

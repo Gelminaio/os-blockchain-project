@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -pedantic -Iinclude
+CFLAGS = -Wall -Wextra -pedantic -Iinclude -D_GNU_SOURCE
 
 # modules required by all four executables
 COMMON = src/crypto.o src/block.o src/transaction.o src/ipc.o src/logging.o

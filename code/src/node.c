@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 #include "common.h"
 #include "config.h"
 #include "errors.h"
@@ -34,6 +35,8 @@ static size_t g_seen_count = 0;
 
 static chain_t g_recovery;
 static int g_recovering = 0;
+static time_t g_recovery_started = 0;
+static time_t g_last_request = 0;
 
 static int parse_args(int argc, char *argv[]) {
     if (argc < 5) {
@@ -75,6 +78,21 @@ static void seen_add(const char *hash) {
     if (g_seen_count < SEEN_MAX) {
         g_seen_count++; //increments if there is still space (otherwise overwrites a value)
     }
+}
+
+//who to ask for the chain when we find out we are behind: the sender, if it is
+//another node (gossip is re-signed by whoever forwards it), otherwise the first
+//node that is not us. Asking ourselves is not just useless: g_fd_node[g_idx] is
+//never opened, it stays 0, so the request would be written on the stdin we
+//inherited from the parent, that is straight onto the user's terminal.
+static int recovery_peer(const msg_t *m) {
+    if (m->sender_role == ROLE_NODE && (int)m->sender_idx < g_num_nodes && (int)m->sender_idx != g_idx) {
+        return (int)m->sender_idx;
+    }
+    if (g_num_nodes < 2) {
+        return -1; //we are the only node, there is nobody to ask
+    }
+    return (g_idx == 0) ? 1 : 0;
 }
 
 static void reply_to(const msg_t *req, msg_t *rep) {
@@ -132,7 +150,7 @@ static void handle_block(const msg_t *m) {
 
     switch (res) {
         case APPEND_OK:
-        case APPEND_REPLACED:
+        case APPEND_REPLACED: {
             //save on disk
             if (csv_save(g_snapshot_path, &g_chain) != OK) {
                 log_msg(LOG_ERROR, "Error during chain save on disk");
@@ -142,10 +160,17 @@ static void handle_block(const msg_t *m) {
             //add the hash to the seen
             seen_add(h);
 
-            //gossip to the node colleagues
+            //gossip to the node colleagues, re-signed as ours: the original
+            //message carries the miner that mined the block, and a node that
+            //receives it while being behind must ask the chain to whoever
+            //forwarded it, not to a role that has no chain to serve
+            msg_t fwd = *m;
+            fwd.sender_role = ROLE_NODE;
+            fwd.sender_idx = (uint32_t)g_idx;
+
             for (int i = 0; i < g_num_nodes; i++) {
                 if (i != g_idx) {
-                    ipc_send(g_fd_node[i], m);
+                    ipc_send(g_fd_node[i], &fwd);
                 }
             }
 
@@ -158,6 +183,7 @@ static void handle_block(const msg_t *m) {
             snprintf(g_log, sizeof(g_log), "Accepted block %llu, saved and propagated.", (unsigned long long)b.index);
             log_msg(LOG_INFO, g_log);
             break;
+        }
 
         case APPEND_DUP:
             seen_add(h); //do not forward it anymore
@@ -171,8 +197,21 @@ static void handle_block(const msg_t *m) {
             break;
 
         case APPEND_AHEAD: {
-            snprintf(g_log, sizeof(g_log), "Block ahead (CHAIN_MISMATCH). Requesting chain for recovery.");
-            log_msg(LOG_WARNING, g_log);
+            //a node that has been stopped for a while sees a block ahead for
+            //every block the others keep mining: one chain request each would
+            //flood the peer inbox with copies of the whole chain and the
+            //fragments would start being dropped on EAGAIN. Keep at most one
+            //recovery in flight and retry no faster than the reply timeout
+            time_t now = time(NULL);
+            if (g_recovering || (now - g_last_request) < REPLY_TIMEOUT_S) {
+                break;
+            }
+
+            int peer = recovery_peer(m);
+            if (peer < 0) {
+                log_msg(LOG_WARNING, "Block ahead (CHAIN_MISMATCH), but there is no other node to recover from");
+                break;
+            }
 
             msg_t req;
             memset(&req, 0, sizeof(msg_t));
@@ -182,13 +221,15 @@ static void handle_block(const msg_t *m) {
             snprintf(req.payload, sizeof(req.payload), "ALL");
             req.payload_len = strlen(req.payload);
 
-            //requesting from the sender, or from node 0 if it was a miner
-            if (m->sender_role == ROLE_NODE) {
-                ipc_send(g_fd_node[m->sender_idx], &req);
+            if (ipc_send(g_fd_node[peer], &req) != OK) {
+                snprintf(g_log, sizeof(g_log), "Block ahead (CHAIN_MISMATCH), but the request to node %d failed", peer);
+                log_msg(LOG_WARNING, g_log);
+                break;
             }
-            else {
-                ipc_send(g_fd_node[0], &req);
-            }
+            g_last_request = now;
+
+            snprintf(g_log, sizeof(g_log), "Block ahead (CHAIN_MISMATCH). Requested chain for recovery from node %d.", peer);
+            log_msg(LOG_WARNING, g_log);
             break;
         }
 
@@ -253,6 +294,10 @@ static void handle_chain_request(const msg_t *m) {
     rep.last = 1;
     rep.payload_len = curr_len;
     reply_to(m, &rep);
+
+    snprintf(g_log, sizeof(g_log), "Chain request from role %u index %u: sent blocks from %zu to %zu in %u fragments",
+             m->sender_role, m->sender_idx, start_idx, g_chain.len - 1, rep.seq + 1);
+    log_msg(LOG_INFO, g_log);
 }
 
 static void handle_block_request(const msg_t *m) {
@@ -288,10 +333,21 @@ static void handle_block_request(const msg_t *m) {
 }
 
 static void handle_reply(const msg_t *m) {
+    time_t now = time(NULL);
+
+    //the fragments travel non blocking: if one is dropped the sequence never
+    //arrives with last == 1 and g_recovering would stay set forever, making the
+    //node ignore every later recovery. Past the timeout a new seq 0 starts over
+    if (g_recovering && m->seq == 0 && (now - g_recovery_started) > REPLY_TIMEOUT_S) {
+        chain_free(&g_recovery);
+        g_recovering = 0;
+    }
+
     if (!g_recovering) {
         if (m->seq == 0) {
             chain_init(&g_recovery);
             g_recovering = 1;
+            g_recovery_started = now;
         }
         else {
             return; //orphan fragment, ignored
