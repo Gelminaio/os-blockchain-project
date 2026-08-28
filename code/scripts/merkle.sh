@@ -63,6 +63,8 @@ merkle_root_of() {
     done
     printf '%s\n' "$list"
 }
-if [[ $# -gt 0 && -n "$1" ]]; then
+# run the function only when executed directly, not when sourced
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     merkle_root_of "$1"
+    exit $?
 fi

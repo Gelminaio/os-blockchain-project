@@ -2,7 +2,7 @@
 # checks a chain csv: fields, merkle roots, indexes and links
 
 source "$(dirname "$0")/errors.sh"
-source "$(dirname "$0")/merkle.sh" ""
+source "$(dirname "$0")/merkle.sh"
 
 file="$1"
 
