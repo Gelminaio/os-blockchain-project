@@ -32,8 +32,30 @@ static int parse_args(int argc, char *argv[], params_t *p) {
     p->transaction_frequency = (argc > 4) ? atoi(argv[4]) : DEFAULT_TX_FREQ;
     p->difficulty = (argc > 5) ? atoi(argv[5]) : DEFAULT_DIFFICULTY;
 
-    if (p->num_nodes < 1 || p->num_miners < 1 || p->num_clients < 0) {
-        fprintf(stderr, "Error: nodes and miners must be at least 1, clients at least 0.\n");
+    //the upper bounds matter as much as the lower ones: the fds array and
+    //g_procs are sized on the config.h limits, so going over them used to
+    //overflow the stack and crash after the children had already been forked
+    if (p->num_nodes < 1 || p->num_nodes > MAX_NODES) {
+        fprintf(stderr, "Error: nodes must be between 1 and %d.\n", MAX_NODES);
+        return ARGS_ERROR;
+    }
+    if (p->num_miners < 1 || p->num_miners > MAX_MINERS) {
+        fprintf(stderr, "Error: miners must be between 1 and %d.\n", MAX_MINERS);
+        return ARGS_ERROR;
+    }
+    if (p->num_clients < 0 || p->num_clients > MAX_CLIENTS) {
+        fprintf(stderr, "Error: clients must be between 0 and %d.\n", MAX_CLIENTS);
+        return ARGS_ERROR;
+    }
+
+    //with 0 the children die on a division by zero and the prompt would show
+    //a system that looks alive but is not
+    if (p->transaction_frequency < 1) {
+        fprintf(stderr, "Error: the transaction frequency must be at least 1.\n");
+        return ARGS_ERROR;
+    }
+    if (p->difficulty < 1) {
+        fprintf(stderr, "Error: the difficulty must be at least 1.\n");
         return ARGS_ERROR;
     }
 
