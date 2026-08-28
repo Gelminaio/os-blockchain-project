@@ -1,4 +1,4 @@
-#these values MUST remain the same as those in errors.h
+#these values must stay the same as the ones in errors.h
 OK=0
 INVALID_BLOCK=10
 CHAIN_MISMATCH=11

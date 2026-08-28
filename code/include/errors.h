@@ -1,4 +1,4 @@
-//these values MUST remain the same as those in errors.sh
+//these values must stay the same as the ones in errors.sh
 
 #ifndef ERRORS_H
 #define ERRORS_H

@@ -1,3 +1,4 @@
+//client process: generates random transactions and sends them to the miners
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -38,7 +39,7 @@ int main(int argc, char *argv[]) {
         ts.tv_nsec = 1000000000L / freq;
     }
 
-    int contatore = 0;
+    int counter = 0;
     char tx[MAX_TX_LEN];
     char log_buf[256];
 
@@ -49,7 +50,12 @@ int main(int argc, char *argv[]) {
             }
         }
         transaction_generate_random(tx, sizeof(tx));
-        transaction_is_valid(tx);
+        if (transaction_is_valid(tx) != OK) {
+            snprintf(log_buf, sizeof(log_buf), "Generated an invalid transaction, skipped: %s", tx);
+            log_msg(LOG_WARNING, log_buf);
+            continue;
+        }
+
         msg_t m;
         memset(&m, 0, sizeof(m));
         m.type = MSG_TX;
@@ -57,9 +63,9 @@ int main(int argc, char *argv[]) {
         m.sender_idx = idx;
         snprintf(m.payload, sizeof(m.payload), "%s", tx);
         m.payload_len = strlen(tx);
-        int miner_target = contatore % num_miner;
-        contatore++;
-        if (ipc_send(fd[miner_target], &m) == -1) {
+        int miner_target = counter % num_miner;
+        counter++;
+        if (ipc_send(fd[miner_target], &m) != OK) {
             if (errno == EAGAIN) {
                 snprintf(log_buf, sizeof(log_buf), "Miner %d full/dead, sending %s failed (EAGAIN)", miner_target, tx);
                 log_msg(LOG_WARNING, log_buf);

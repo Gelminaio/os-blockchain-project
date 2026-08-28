@@ -1,90 +1,91 @@
 #!/bin/bash
+# checks a chain csv: fields, merkle roots, indexes and links
 
-source scripts/errors.sh
-source scripts/merkle.sh ""
+source "$(dirname "$0")/errors.sh"
+source "$(dirname "$0")/merkle.sh"
 
 file="$1"
 
-[[ -f "$file" ]] || { echo "File non trovato" >&2; exit "$FILE_ERROR"; }
-[[ -s "$file" ]] || { echo "File vuoto" >&2; exit "$CSV_PARSE_ERROR"; }
+[[ -f "$file" ]] || { echo "File not found" >&2; exit "$FILE_ERROR"; }
+[[ -s "$file" ]] || { echo "Empty file" >&2; exit "$CSV_PARSE_ERROR"; }
 
 {
     IFS= read -r header
     header="${header%$'\r'}"
 
     if [[ "$header" != "index,timestamp,prev_hash,merkle_root,nonce,transactions" ]]; then
-        echo "Intestazione CSV malformata" >&2
+        echo "Malformed CSV header" >&2
         exit "$CSV_PARSE_ERROR"
     fi
 
-    riga=1
-    blocchi=0
-    primo_errore=0
-    hash_precedente=""
-    idx_dec_precedente=-1
+    line_no=1
+    blocks=0
+    first_error=0
+    prev_computed=""
+    prev_idx_dec=-1
 
     while IFS=',' read -r idx ts prev mroot nonce txs; do
         [[ -z "$idx" ]] && continue
         txs="${txs%$'\r'}"
-        (( riga++ ))
-        (( blocchi++ ))
+        (( line_no++ ))
+        (( blocks++ ))
 
         if  [[ ! "$idx" =~ ^[0-9a-f]{16}$ ]] || \
             [[ ! "$ts" =~ ^[0-9a-f]{16}$ ]] || \
             [[ ! "$nonce" =~ ^[0-9a-f]{16}$ ]] || \
             [[ ! "$prev" =~ ^[0-9a-f]{64}$ ]] || \
             [[ ! "$mroot" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "riga $riga: campo malformato" >&2
-            [[ $primo_errore -eq 0 ]] && primo_errore="$INVALID_BLOCK"
-
+            # the row cannot be read, no point in checking the rest of it
+            echo "line $line_no: malformed field" >&2
+            exit "$CSV_PARSE_ERROR"
         fi
 
-        # la radice di merkle
-        atteso=$(merkle_root_of "$txs")
-        if [[ "$atteso" != $mroot ]]; then
-            echo "riga $riga: merkle root non valida" >&2
-            [[ $primo_errore -eq 0 ]] && primo_errore="$INVALID_BLOCK"
+        # the merkle root
+        expected=$(merkle_root_of "$txs")
+        if [[ "$expected" != "$mroot" ]]; then
+            echo "line $line_no: invalid merkle root" >&2
+            [[ $first_error -eq 0 ]] && first_error="$INVALID_BLOCK"
         fi
 
-        # gli indici
-        if [[ $blocchi -eq 1 ]]; then
+        # the indexes
+        if [[ $blocks -eq 1 ]]; then
             if [[ "$idx" != "0000000000000000" ]]; then
-                echo "riga $riga: indice errato" >&2
-                [[ $primo_errore -eq 0 ]] && primo_errore="$INVALID_BLOCK"
+                echo "line $line_no: wrong index" >&2
+                [[ $first_error -eq 0 ]] && first_error="$CHAIN_MISMATCH"
             fi
-            idx_dec_precedente=0
+            prev_idx_dec=0
         else
             idx_dec=$((16#$idx))
-            if [[ $idx_dec -ne $((idx_dec_precedente + 1)) ]]; then
-            echo "riga $riga: indice errato" >&2
-            [[ $primo_errore -eq 0 ]] && primo_errore="$INVALID_BLOCK"
+            if [[ $idx_dec -ne $((prev_idx_dec + 1)) ]]; then
+                echo "line $line_no: wrong index" >&2
+                [[ $first_error -eq 0 ]] && first_error="$CHAIN_MISMATCH"
             fi
-            idx_dec_precedente=$idx_dec
+            prev_idx_dec=$idx_dec
         fi
 
-        # il collegamento
-        if [[ $blocchi -gt 1 ]]; then
-            if [[ "$prev" != "$hash_precedente" ]]; then
-            echo "riga $riga: collegamento rotto" >&2
-            [[ $primo_errore -eq 0 ]] && primo_errore="$CHAIN_MISMATCH"
+        # the link to the previous block
+        if [[ $blocks -gt 1 ]]; then
+            if [[ "$prev" != "$prev_computed" ]]; then
+                echo "line $line_no: broken link" >&2
+                [[ $first_error -eq 0 ]] && first_error="$CHAIN_MISMATCH"
             fi
         fi
 
-        hash_precedente=$(printf '%s%s%s%s%s%s' "$idx" "$ts" "$prev" "$mroot" "$nonce" "$txs" | sha256sum | cut -d' ' -f1 )
+        prev_computed=$(printf '%s%s%s%s%s%s' "$idx" "$ts" "$prev" "$mroot" "$nonce" "$txs" | sha256sum | cut -d' ' -f1 )
 
     done
 
-    # uscita
-    if [[ $blocchi -eq 0 ]]; then
+    # exit
+    if [[ $blocks -eq 0 ]]; then
         echo "OK: empty chain (0 blocks)"
         exit "$OK"
     fi
 
-    if [[ $primo_errore -ne 0 ]]; then
-        exit "$primo_errore"
+    if [[ $first_error -ne 0 ]]; then
+        exit "$first_error"
     fi
 
-    echo "OK: $blocchi blocks"
+    echo "OK: $blocks blocks"
     exit "$OK"
 
 } < "$file"

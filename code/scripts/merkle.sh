@@ -1,4 +1,5 @@
 #!/bin/bash
+# merkle root of a "tx1::tx2::..." string, same rules as crypto.c
 
 source "$(dirname "$0")/errors.sh"
 
@@ -9,32 +10,32 @@ merkle_root_of() {
         return "$INVALID_TRANSACTION"
     fi
 
-    local resto="$txs"
-    local lista=""
+    local rest="$txs"
+    local list=""
 
-    while [[ "$resto" == *::* ]]; do
-        local tx="${resto%%::*}"
-        resto="${resto#*::}"
-        local foglia=$(printf '%s' "$tx" | sha256sum | cut -d' ' -f1)
-        if [[ -z "$lista" ]]; then
-            lista="$foglia"
+    while [[ "$rest" == *::* ]]; do
+        local tx="${rest%%::*}"
+        rest="${rest#*::}"
+        local leaf=$(printf '%s' "$tx" | sha256sum | cut -d' ' -f1)
+        if [[ -z "$list" ]]; then
+            list="$leaf"
         else
-            lista="${lista}"$'\n'"$foglia"
+            list="${list}"$'\n'"$leaf"
         fi
     done
 
-    local foglia_finale=$(printf '%s' "$resto" | sha256sum | cut -d' ' -f1)
-    if [[ -z "$lista" ]]; then
-        lista="$foglia_finale"
+    local last_leaf=$(printf '%s' "$rest" | sha256sum | cut -d' ' -f1)
+    if [[ -z "$list" ]]; then
+        list="$last_leaf"
     else
-        lista="${lista}"$'\n'"$foglia_finale"
+        list="${list}"$'\n'"$last_leaf"
     fi
 
-    while (( $(printf '%s\n' "$lista" | wc -l) > 1 )); do
-        local nuova_lista=""
-        local num_hashes=$(printf '%s\n' "$lista" | wc -l)
+    while (( $(printf '%s\n' "$list" | wc -l) > 1 )); do
+        local new_list=""
+        local num_hashes=$(printf '%s\n' "$list" | wc -l)
         if (( num_hashes % 2 != 0 )); then
-            lista="${lista}"$'\n'"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            list="${list}"$'\n'"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         fi
 
         local h1=""
@@ -49,19 +50,21 @@ merkle_root_of() {
                 h2="$h"
                 local pair_hash=$(printf '%s%s' "$h1" "$h2" | sha256sum | cut -d' ' -f1)
 
-                if [[ -z "$nuova_lista" ]]; then
-                    nuova_lista="$pair_hash"
+                if [[ -z "$new_list" ]]; then
+                    new_list="$pair_hash"
                 else
-                    nuova_lista="${nuova_lista}"$'\n'"$pair_hash"
+                    new_list="${new_list}"$'\n'"$pair_hash"
                 fi
                 h1=""
                 h2=""
             fi
-        done <<< "$lista"
-        lista="$nuova_lista"
+        done <<< "$list"
+        list="$new_list"
     done
-    printf '%s\n' "$lista"
+    printf '%s\n' "$list"
 }
-if [[ $# -gt 0 && -n "$1" ]]; then
+# run the function only when executed directly, not when sourced
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     merkle_root_of "$1"
+    exit $?
 fi

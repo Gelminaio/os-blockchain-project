@@ -1,6 +1,7 @@
 #!/bin/bash
+# sha-256 of a hex string given on the command line
 
-source scripts/errors.sh
+source "$(dirname "$0")/errors.sh"
 
 len=$(printf '%s' "$1" | wc -c)
 

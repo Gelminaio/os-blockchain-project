@@ -70,6 +70,13 @@ make run                      # default scenario
 make run ARGS="3 5 10 1 12"   # custom arguments
 ```
 
+Do not run the system from a folder that an IDE has open and is indexing.
+The FIFOs live in `code/fifo/`, and an indexer that opens them for reading
+(the VS Code C/C++ extension does) consumes the messages before the miners
+can read them: the miners then sit on an empty mempool and never mine, with
+no error anywhere. Run it from a plain terminal, or from a copy outside the
+workspace.
+
 The arguments match the bootstrap program's signature:
 
 ```

@@ -12,3 +12,8 @@ logs/
 fifo/
 bootstrap.csv
 chain-node-*.csv
+
+# chains saved from the CLI with "save blockchain <name>.csv": they land in
+# code/, one level above tests/, so the fixtures stay tracked
+code/*.csv
+!code/tests/*.csv

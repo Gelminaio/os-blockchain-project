@@ -23,7 +23,7 @@ typedef struct {
     size_t cap;
 } chain_t;
 
-typedef enum { APPEND_OK, APPEND_REPLACED, APPEND_DUP, APPEND_STALE, APPEND_AHEAD, APPEND_INVALID } append_result_t; 
+typedef enum { APPEND_OK, APPEND_REPLACED, APPEND_DUP, APPEND_STALE, APPEND_AHEAD, APPEND_INVALID } append_result_t;
 
 void chain_init(chain_t *c);
 void chain_free(chain_t *c);
