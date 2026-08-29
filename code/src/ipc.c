@@ -230,6 +230,10 @@ int ipc_recv(int fd, msg_t *m) {
             return IPC_ERROR;
         }
     }
+
+    //every reader treats the payload as a string: a message that arrives without
+    //a terminator would send strlen past the end of the buffer
+    m->payload[MSG_PAYLOAD_MAX - 1] = '\0';
     return OK;
 }
 
@@ -251,6 +255,9 @@ int ipc_recv_nb(int fd, msg_t *m) {
             return IPC_ERROR;
         }
     }
+
+    //same as ipc_recv: the payload must always be usable as a string
+    m->payload[MSG_PAYLOAD_MAX - 1] = '\0';
     return OK;
 }
 
