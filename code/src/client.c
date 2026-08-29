@@ -62,6 +62,12 @@ int main(int argc, char *argv[]) {
 
     int counter = 0;
     int no_miner_logged = 0; //the "no miner left" message is worth logging once, not once per transaction
+    int miner_full[MAX_MINERS]; //same idea: one line when the inbox fills up, not one per lost transaction
+    long lost[MAX_MINERS];
+    for (int j = 0; j < num_miner; j++) {
+        miner_full[j] = 0;
+        lost[j] = 0;
+    }
     char tx[MAX_TX_LEN];
     char log_buf[256];
 
@@ -112,10 +118,20 @@ int main(int argc, char *argv[]) {
 
         if (ipc_send(fd[miner_target], &m) != OK) {
             if (errno == EAGAIN) {
-                snprintf(log_buf, sizeof(log_buf), "Miner %d inbox full, sending %s failed (EAGAIN)", miner_target, tx);
-                log_msg(LOG_WARNING, log_buf);
+                lost[miner_target]++;
+                if (!miner_full[miner_target]) {
+                    miner_full[miner_target] = 1;
+                    snprintf(log_buf, sizeof(log_buf), "Miner %d inbox full (EAGAIN), the transactions for it are dropped", miner_target);
+                    log_msg(LOG_WARNING, log_buf);
+                }
             }
         } else {
+            if (miner_full[miner_target]) {
+                miner_full[miner_target] = 0;
+                snprintf(log_buf, sizeof(log_buf), "Miner %d inbox free again, %ld transactions had been lost", miner_target, lost[miner_target]);
+                log_msg(LOG_WARNING, log_buf);
+                lost[miner_target] = 0;
+            }
             snprintf(log_buf, sizeof(log_buf), "Sent to miner %d: %s", miner_target, tx);
             log_msg(LOG_INFO, log_buf);
         }

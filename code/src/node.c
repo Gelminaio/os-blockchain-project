@@ -39,7 +39,9 @@ static time_t g_recovery_started = 0;
 static time_t g_last_request = 0;
 
 static int parse_args(int argc, char *argv[]) {
+    //the same usage line as miner and client: run by hand it said nothing
     if (argc < 5) {
+        fprintf(stderr, "Usage: %s <idx> <num_nodes> <num_miners> <bootstrap_csv> <miner_pid>...\n", argv[0]);
         return ARGS_ERROR;
     }
     g_idx = atoi(argv[1]);
@@ -47,6 +49,7 @@ static int parse_args(int argc, char *argv[]) {
     g_num_miners = atoi(argv[3]);
 
     if ((g_num_miners != argc - 5) || (g_idx < 0) || (g_idx >= g_num_nodes) || (g_num_nodes < 1) || (g_num_nodes > MAX_NODES ) || (g_num_miners < 1) || (g_num_miners > MAX_MINERS)) {
+        fprintf(stderr, "Usage: %s <idx> <num_nodes> <num_miners> <bootstrap_csv> <miner_pid>...\n", argv[0]);
         return ARGS_ERROR;
     }
 
