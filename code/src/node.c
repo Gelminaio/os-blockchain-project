@@ -247,14 +247,26 @@ static void handle_chain_request(const msg_t *m) {
 
     size_t start_idx = 0;
     if (strncmp(m->payload, "INDEX ", 6) == 0) {
-        start_idx = (size_t) strtoull(m->payload + 6, NULL, 10);
+        const char *arg = m->payload + 6;
+        char *end = NULL;
+        unsigned long long parsed = strtoull(arg, &end, 10);
+
+        //without this check a non numeric index became 0 and we sent the whole chain
+        if (end == arg || *end != '\0' || *arg == '-') {
+            rep.last = 1;
+            snprintf(rep.payload, sizeof(rep.payload), "ERR:ARGS_ERROR: '%s' is not a valid index", arg);
+            rep.payload_len = strlen(rep.payload);
+            reply_to(m, &rep);
+            return;
+        }
+        start_idx = (size_t) parsed;
     }
     else if (strncmp(m->payload, "HASH ", 5) == 0) {
         const block_t *b = chain_find_hash(&g_chain, m->payload + 5);
         if (b == NULL) {
             //an unknown hash used to leave start_idx at 0 and send the whole chain
             rep.last = 1;
-            snprintf(rep.payload, sizeof(rep.payload), "ERR:Block not found");
+            snprintf(rep.payload, sizeof(rep.payload), "ERR:BLOCK_NOT_FOUND: no block with that hash");
             rep.payload_len = strlen(rep.payload);
             reply_to(m, &rep);
             return;
@@ -262,10 +274,16 @@ static void handle_chain_request(const msg_t *m) {
         start_idx = b->index;
     } //ALL starts from 0
 
-    //if chain is empty or the request is out of scale
+    //an empty reply left the user looking at a blank line: say what happened
     if (start_idx >= g_chain.len) {
         rep.last = 1;
-        rep.payload_len = 0;
+        if (g_chain.len == 0) {
+            snprintf(rep.payload, sizeof(rep.payload), "ERR:BLOCK_NOT_FOUND: the chain is empty");
+        } else {
+            snprintf(rep.payload, sizeof(rep.payload), "ERR:BLOCK_NOT_FOUND: no block at index %zu, the chain has %zu blocks (0 to %zu)",
+                     start_idx, g_chain.len, g_chain.len - 1);
+        }
+        rep.payload_len = strlen(rep.payload);
         reply_to(m, &rep);
         return;
     }
@@ -321,7 +339,7 @@ static void handle_block_request(const msg_t *m) {
     }
 
     if (b == NULL) {
-        snprintf(rep.payload, sizeof(rep.payload), "ERR:Block not found");
+        snprintf(rep.payload, sizeof(rep.payload), "ERR:BLOCK_NOT_FOUND: no block with that index or hash");
     } else {
         block_to_csv_row(b, rep.payload, sizeof(rep.payload));
     }

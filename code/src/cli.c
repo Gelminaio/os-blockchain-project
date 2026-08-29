@@ -284,8 +284,9 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
                 }
 
                 if (strncmp(rep.payload, "ERR:", 4) == 0) {
+                    //the node names the error code inside the message, so the
+                    //CLI does not have to guess which one it was
                     printf("Error from node: %s\n", rep.payload + 4);
-                    printf("[Error code: BLOCK_NOT_FOUND]\n");
                     break;
                 }
 
@@ -345,8 +346,9 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
                 }
 
                 if (strncmp(rep.payload, "ERR:", 4) == 0) {
+                    //the node names the error code inside the message, so the
+                    //CLI does not have to guess which one it was
                     printf("Error from node: %s\n", rep.payload + 4);
-                    printf("[Error code: BLOCK_NOT_FOUND]\n");
                     break;
                 }
 
