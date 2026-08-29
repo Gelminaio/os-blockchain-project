@@ -16,6 +16,7 @@
 #define MINE_SLEEP_MAX 5
 #define DEFAULT_DIFFICULTY 12
 #define DEFAULT_TX_FREQ 1
+#define MAX_TX_FREQ 1000
 #define REPLY_TIMEOUT_S 2
 #define POLL_NAP_MS 50 //checks every 50ms
 #define LOG_DIR "logs"

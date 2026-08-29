@@ -20,9 +20,7 @@ int ipc_unlink_all(int n_nodes, int n_miner);
 // opening the communications
 int ipc_open_inbox(role_t role, int idx, int nonblock, int *fd);
 
-//a sender is always non blocking: the way the IPC is designed, whoever writes
-//must never stop and wait for the receiver, so the fifo is always opened with
-//O_NONBLOCK and there is no need for a parameter to choose it
+//a sender is always O_NONBLOCK: who writes must never wait for the receiver
 int ipc_open_sender(role_t role, int idx, int *fd);
 
 

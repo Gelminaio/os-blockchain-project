@@ -45,12 +45,7 @@ int ipc_fifo_path(char *out, size_t cap, role_t role, int idx) {
     }
 }
 
-//the default fifo capacity on Linux is 64 KiB, which is only 16 messages of
-//sizeof(msg_t): a burst of transactions fills it in a fraction of a second and
-//the senders, non blocking by design, start getting EAGAIN. Enlarging the
-//buffer is best effort: F_SETPIPE_SZ is a Linux extension, the kernel caps the
-//size at /proc/sys/fs/pipe-max-size, so we try the target and halve it until
-//it is accepted. If none is, we simply keep the default capacity.
+//the default fifo is 64 KiB, only 16 messages: we try to make it bigger and if the kernel says no we keep it as it is
 static void ipc_grow_fifo(int fd) {
 #ifdef F_SETPIPE_SZ
     for (int size = FIFO_CAPACITY; size >= FIFO_CAPACITY_MIN; size /= 2) {
@@ -96,8 +91,7 @@ int ipc_create_all(int n_nodes, int n_miner, int *fds_out) {
             return IPC_ERROR;
         }
 
-        //all the fds of a fifo share one kernel buffer, and the parent keeps this
-        //one open for the whole run, so the new size holds for the children too
+        //the fds of a fifo share one buffer and the parent keeps this one open, so the size holds for the children too
         ipc_grow_fifo(fd);
 
         // save the descriptor in the array
@@ -123,8 +117,7 @@ int ipc_create_all(int n_nodes, int n_miner, int *fds_out) {
             return IPC_ERROR;
         }
 
-        //all the fds of a fifo share one kernel buffer, and the parent keeps this
-        //one open for the whole run, so the new size holds for the children too
+        //the fds of a fifo share one buffer and the parent keeps this one open, so the size holds for the children too
         ipc_grow_fifo(fd);
 
         // save the descriptor in the array
@@ -148,8 +141,7 @@ int ipc_create_all(int n_nodes, int n_miner, int *fds_out) {
         return IPC_ERROR;
     }
 
-    //all the fds of a fifo share one kernel buffer, and the parent keeps this
-    //one open for the whole run, so the new size holds for the children too
+    //the fds of a fifo share one buffer and the parent keeps this one open, so the size holds for the children too
     ipc_grow_fifo(fd);
 
     // save the descriptor in the array
@@ -342,10 +334,10 @@ int ipc_unlink_all(int n_nodes, int n_miner) {
     }
     //delete the parent's fifo
     ipc_fifo_path(path, sizeof(path), ROLE_PARENT, 0);
-        unlink(path);
+    unlink(path);
 
-        //remove the directory
-        rmdir(FIFO_DIR);
+    //remove the directory
+    rmdir(FIFO_DIR);
 
-        return OK;
+    return OK;
 }

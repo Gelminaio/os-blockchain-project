@@ -44,10 +44,7 @@ static void mempool_remove(const char *tx) {
     }
 }
 
-//blocks we mined and already sent, waiting to find out how they ended up. Their
-//transactions are out of the mempool, so a block that loses the tie breaker
-//would take them down with it: the clients send every transaction to a single
-//miner, nobody else has a copy and nobody else would ever mine it again.
+//blocks we mined and sent, still waiting: if one loses, its transactions must go back to the mempool
 #define PENDING_MAX 8
 
 typedef struct {
@@ -75,8 +72,7 @@ static void pending_drop(int i) {
 
 static void pending_add(const block_t *b, const char *hash) {
     if (pending_count == PENDING_MAX) {
-        //the oldest one never came back from the nodes: give its transactions
-        //another chance instead of forgetting about them
+        //this one never came back, we give its transactions another chance
         pending_requeue(&pending[0]);
         pending_drop(0);
     }
@@ -90,10 +86,7 @@ static void pending_add(const block_t *b, const char *hash) {
     }
 }
 
-//asks the chain what it actually kept at the index of each of our candidates.
-//A block of ours that was beaten gives its transactions back to the mempool;
-//one that is sitting on the tip stays pending, because a block with an even
-//lower hash can still replace it and we would lose track of it
+//looks at what the chain kept: a block of ours that was beaten gives its transactions back
 static void pending_settle(const chain_t *chain) {
     const block_t *tip = chain_tip(chain);
     char log_buf[256];
@@ -113,8 +106,7 @@ static void pending_settle(const chain_t *chain) {
         }
 
         if (strcmp(kept_hash, pending[i].hash) == 0) {
-            //ours is the one in the chain, but only a block further ahead makes
-            //it final: while it is the tip a lower hash could still replace it
+            //ours is on the tip, but a lower hash can still replace it, so we wait
             if (tip->index > pending[i].index) {
                 pending_drop(i);
             } else {
@@ -123,8 +115,7 @@ static void pending_settle(const chain_t *chain) {
             continue;
         }
 
-        //beaten, and the tie breaker is deterministic on the lowest hash, so it
-        //can never win it back: the transactions go home
+        //the lowest hash always wins, so a block that lost can never come back
         snprintf(log_buf, sizeof(log_buf), "Our block %llu lost the tie breaker: %zu transactions back in the mempool",
                  (unsigned long long)pending[i].index, pending[i].tx_count);
         log_msg(LOG_INFO, log_buf);
@@ -133,11 +124,7 @@ static void pending_settle(const chain_t *chain) {
     }
 }
 
-//drains everything pending in the inbox: transactions go into the mempool,
-//blocks are appended to the chain. Called both between blocks and inside the
-//attempts loop, so the fifo keeps being read while mining and the clients
-//stop hitting EAGAIN. Returns 1 if the tip moved, meaning a candidate built
-//on the old tip is now stale, 0 otherwise.
+//empties the inbox: transactions to the mempool, blocks to the chain. Returns 1 if the tip moved
 static int drain_inbox(int inbox, chain_t *chain) {
     msg_t msg;
     int tip_moved = 0;
@@ -150,8 +137,7 @@ static int drain_inbox(int inbox, chain_t *chain) {
         } else if (msg.type == MSG_BLOCK) {
             block_t incoming;
             if (block_from_csv_row(msg.payload, &incoming) == OK) {
-                //chain_append can realloc and move the array, so comparing the
-                //pointers is not reliable: save the tip index before the append
+                //chain_append can realloc and move the array, so we save the index and not the pointer
                 const block_t *old_tip = chain_tip(chain);
                 int had_tip = (old_tip != NULL);
                 uint64_t old_index = had_tip ? old_tip->index : 0;
@@ -160,8 +146,7 @@ static int drain_inbox(int inbox, chain_t *chain) {
 
                 if (res == APPEND_OK || res == APPEND_REPLACED) {
                     const block_t *new_tip = chain_tip(chain);
-                    //APPEND_REPLACED swaps the tip keeping the same index, so it
-                    //changes the tip even if the index doesn't move
+                    //APPEND_REPLACED changes the tip even if the index stays the same
                     int tip_changed = (res == APPEND_REPLACED) || !had_tip ||
                                          (new_tip != NULL && new_tip->index != old_index);
                     if (new_tip != NULL && tip_changed) {
@@ -269,9 +254,7 @@ int main(int argc, char *argv[]) {
         //the candidate does not exist yet here, so a moved tip changes nothing
         (void)drain_inbox(inbox, &chain);
 
-        //a SIGUSR1 that arrived while draining refers to a block we have just
-        //read, so clear it here: otherwise the attempts loop below would exit
-        //on its first round without ever rolling
+        //a SIGUSR1 arrived while reading is about a block we already have, so we clear it here
         g_abort_mining = 0;
 
         if (mempool_count == 0) {
@@ -319,9 +302,7 @@ int main(int argc, char *argv[]) {
             sleep(sleep_time);
             if (g_should_stop) break;
             if (g_abort_mining) break;
-            //keep reading while mining: incoming transactions land in the
-            //mempool for the next block, and a block that moves the tip makes
-            //this candidate stale without having to rely on SIGUSR1 alone
+            //we read also while mining, so the clients do not fill the fifo and we see a new tip at once
             if (drain_inbox(inbox, &chain)) break;
 
             if ((random() % difficulty) == 0) {
@@ -365,9 +346,7 @@ int main(int argc, char *argv[]) {
                 ipc_send(node_fds[i], &out_msg);
             }
 
-            //the transactions leave the mempool so the next candidate does not
-            //mine them a second time, but this block can still lose a tie
-            //breaker: keep it until the chain tells us how it ended
+            //the transactions leave the mempool, but the block can still lose, so we keep it
             pending_add(&candidate, b_hash);
 
             for (size_t i = 0; i < candidate.tx_count; i++) {

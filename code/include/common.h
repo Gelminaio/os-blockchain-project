@@ -34,7 +34,6 @@ typedef struct {
     int num_clients;
     int transaction_frequency;
     int difficulty;
-    char initial_state[MAX_PATH_LEN];
 } params_t;
 
 #endif

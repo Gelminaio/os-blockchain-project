@@ -19,3 +19,6 @@ code/*.csv
 !code/tests/*.csv
 # generato localmente, contiene path assoluti
 code/compile_commands.json
+
+# configurazione locale degli IDE
+.idea/

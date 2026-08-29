@@ -23,8 +23,7 @@ static uint32_t maj(uint32_t x, uint32_t y, uint32_t z) {
     return (x & y) ^ (x & z) ^ (y & z);
 }
 
-//the 4 sigma functions: SIGMA is used in the compression and only rotates,
-//sigma prepares the words and ends with a shift
+//the 4 sigma functions: SIGMA only rotates, sigma prepares the words and ends with a shift
 static uint32_t SIGMA0(uint32_t x) {
     return rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22);
 }

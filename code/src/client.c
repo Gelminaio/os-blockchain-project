@@ -12,11 +12,7 @@
 #include "ipc.h"
 #include "logging.h"
 
-//kill(pid, 0) delivers no signal, it only reports whether the pid still
-//exists. The parent keeps every fifo open for the whole run, so a write to a
-//dead miner keeps succeeding until the buffer fills and the transactions are
-//lost without a trace: the pid is the only way to tell a dead miner from a
-//merely busy one.
+//kill(pid, 0) sends nothing, it only says if the pid is still there: a write to a dead miner would work anyway
 static int miner_is_alive(pid_t pid) {
     return kill(pid, 0) == 0 || errno == EPERM;
 }
@@ -89,8 +85,7 @@ int main(int argc, char *argv[]) {
         m.sender_idx = idx;
         snprintf(m.payload, sizeof(m.payload), "%s", tx);
         m.payload_len = strlen(tx);
-        //round robin over the survivors only: a miner that died is skipped from
-        //now on, otherwise every transaction addressed to it would be lost
+        //round robin only on the miners that are still alive
         int miner_target = -1;
         for (int j = 0; j < num_miner; j++) {
             int cand = (counter + j) % num_miner;

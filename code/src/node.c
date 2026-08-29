@@ -80,11 +80,7 @@ static void seen_add(const char *hash) {
     }
 }
 
-//who to ask for the chain when we find out we are behind: the sender, if it is
-//another node (gossip is re-signed by whoever forwards it), otherwise the first
-//node that is not us. Asking ourselves is not just useless: g_fd_node[g_idx] is
-//never opened, it stays 0, so the request would be written on the stdin we
-//inherited from the parent, that is straight onto the user's terminal.
+//who we ask for the chain: the sender if it is a node, never ourselves because g_fd_node[g_idx] stays 0 and 0 is stdin
 static int recovery_peer(const msg_t *m) {
     if (m->sender_role == ROLE_NODE && (int)m->sender_idx < g_num_nodes && (int)m->sender_idx != g_idx) {
         return (int)m->sender_idx;
@@ -128,14 +124,14 @@ static void reply_to(const msg_t *req, msg_t *rep) {
 static void handle_block(const msg_t *m) {
     block_t b;
     if (block_from_csv_row(m->payload, &b) != OK) {
-        snprintf(g_log, sizeof(g_log), "Received malformed block from role %d idx %d", m->sender_role, m->sender_idx);
+        snprintf(g_log, sizeof(g_log), "Received malformed block from role %u idx %u", m->sender_role, m->sender_idx);
         log_msg(LOG_WARNING, g_log);
         return;
     }
 
     hex64_t h;
     if (block_hash(&b, h) != OK) {
-        snprintf(g_log, sizeof(g_log), "Error computing the hash of the block received from role %d idx %d", m->sender_role, m->sender_idx);
+        snprintf(g_log, sizeof(g_log), "Error computing the hash of the block received from role %u idx %u", m->sender_role, m->sender_idx);
         log_msg(LOG_WARNING, g_log);
         return;
     }
@@ -160,10 +156,7 @@ static void handle_block(const msg_t *m) {
             //add the hash to the seen
             seen_add(h);
 
-            //gossip to the node colleagues, re-signed as ours: the original
-            //message carries the miner that mined the block, and a node that
-            //receives it while being behind must ask the chain to whoever
-            //forwarded it, not to a role that has no chain to serve
+            //we sign the gossip as ours, so a node that is behind asks the chain to us and not to a miner
             msg_t fwd = *m;
             fwd.sender_role = ROLE_NODE;
             fwd.sender_idx = (uint32_t)g_idx;
@@ -197,11 +190,7 @@ static void handle_block(const msg_t *m) {
             break;
 
         case APPEND_AHEAD: {
-            //a node that has been stopped for a while sees a block ahead for
-            //every block the others keep mining: one chain request each would
-            //flood the peer inbox with copies of the whole chain and the
-            //fragments would start being dropped on EAGAIN. Keep at most one
-            //recovery in flight and retry no faster than the reply timeout
+            //one request for every block ahead would flood the peer: one recovery at a time and not faster than the timeout
             time_t now = time(NULL);
             if (g_recovering || (now - g_last_request) < REPLY_TIMEOUT_S) {
                 break;
@@ -234,10 +223,7 @@ static void handle_block(const msg_t *m) {
         }
 
         case APPEND_LOST:
-            //two miners found a block for the same index: block.c has already
-            //logged both hashes. The chain keeps the winner, this one is
-            //dropped without propagating it, and the miner that made it puts
-            //its transactions back in the mempool
+            //two miners found the same index: block.c already logged both hashes, we keep the winner
             snprintf(g_log, sizeof(g_log), "Concurrent block %llu lost the tie breaker, discarded", (unsigned long long)b.index);
             log_msg(LOG_INFO, g_log);
             break;
@@ -344,9 +330,7 @@ static void handle_block_request(const msg_t *m) {
 static void handle_reply(const msg_t *m) {
     time_t now = time(NULL);
 
-    //the fragments travel non blocking: if one is dropped the sequence never
-    //arrives with last == 1 and g_recovering would stay set forever, making the
-    //node ignore every later recovery. Past the timeout a new seq 0 starts over
+    //if a fragment is lost the last == 1 never arrives, so after the timeout a new seq 0 starts again
     if (g_recovering && m->seq == 0 && (now - g_recovery_started) > REPLY_TIMEOUT_S) {
         chain_free(&g_recovery);
         g_recovering = 0;

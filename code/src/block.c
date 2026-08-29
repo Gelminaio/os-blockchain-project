@@ -329,8 +329,7 @@ append_result_t chain_append(chain_t *c, const block_t *b) {
         }
     }
 
-    //non-empty chain
-    //chain tip's hash
+    //non-empty chain: hash of the tip
     char tip_hash[65];
     if (block_hash(tip, tip_hash) != OK) {
         return APPEND_INVALID;
@@ -355,8 +354,7 @@ append_result_t chain_append(chain_t *c, const block_t *b) {
             c->v[c->len - 1] = *b;
             return APPEND_REPLACED;
         } else {
-            //new block lose: a normal outcome of two miners working at the same
-            //time, not a defect of the block, so it is logged as such
+            //new block lose: two miners working together is normal, the block is not broken
             char msg[256];
             snprintf(msg, sizeof(msg), "Concurrent block '%s' lost the tie breaker against the tip '%s'", b_hash, tip_hash);
             log_msg(LOG_INFO, msg);
@@ -436,11 +434,7 @@ int csv_load(const char *path, chain_t *out) {
                 return INVALID_BLOCK;
 
             default:
-                //all the other cases: APPEND_AHEAD, APPEND_STALE, APPEND_DUP,
-                //APPEND_REPLACED, APPEND_LOST. A csv is a linear chain, so two
-                //blocks racing for the same index make it inconsistent, not
-                //corrupted: the verdict is CHAIN_MISMATCH and it no longer
-                //depends on which of the two hashes happens to be the lower one
+                //AHEAD, STALE, DUP, REPLACED and LOST: the chain in the file is not linear, so it is a mismatch and not a broken block
                 snprintf(msg, sizeof(msg), "Chain mismatch (code %d) at line %d.", res, line_number);
                 log_msg(LOG_ERROR, msg);
                 fclose(fp);

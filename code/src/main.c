@@ -1,5 +1,4 @@
-//parent process: prepares the bootstrap chain and the fifos, spawns nodes,
-//miners and clients, then runs the CLI and shuts everything down
+//parent process: prepares the chain and the fifos, spawns the children, runs the CLI
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -33,9 +32,7 @@ static int parse_args(int argc, char *argv[], params_t *p) {
     p->transaction_frequency = (argc > 4) ? atoi(argv[4]) : DEFAULT_TX_FREQ;
     p->difficulty = (argc > 5) ? atoi(argv[5]) : DEFAULT_DIFFICULTY;
 
-    //the upper bounds matter as much as the lower ones: the fds array and
-    //g_procs are sized on the config.h limits, so going over them used to
-    //overflow the stack and crash after the children had already been forked
+    //also the upper bounds, because fds and g_procs have the size of the limits in config.h
     if (p->num_nodes < 1 || p->num_nodes > MAX_NODES) {
         fprintf(stderr, "Error: nodes must be between 1 and %d.\n", MAX_NODES);
         return ARGS_ERROR;
@@ -49,10 +46,9 @@ static int parse_args(int argc, char *argv[], params_t *p) {
         return ARGS_ERROR;
     }
 
-    //with 0 the children die on a division by zero and the prompt would show
-    //a system that looks alive but is not
-    if (p->transaction_frequency < 1) {
-        fprintf(stderr, "Error: the transaction frequency must be at least 1.\n");
+    //with 0 the children would die on a division by zero, over the maximum the sleep becomes 0 and they spin
+    if (p->transaction_frequency < 1 || p->transaction_frequency > MAX_TX_FREQ) {
+        fprintf(stderr, "Error: the transaction frequency must be between 1 and %d.\n", MAX_TX_FREQ);
         return ARGS_ERROR;
     }
     if (p->difficulty < 1) {
@@ -143,14 +139,7 @@ int main(int argc, char *argv[]) {
     struct sigaction sa_chld, sa_stop;
     memset(&sa_chld, 0, sizeof(sa_chld));
     sa_chld.sa_handler = reap_children;
-    //SA_NOCLDSTOP: without it the kernel also sends SIGCHLD when a child is
-    //stopped with SIGSTOP or resumed with SIGCONT, and that interrupts the
-    //CLI. reap_children only collects children that have terminated.
-    //SA_RESTART: so the fgets of the CLI restarts instead of returning NULL
-    //when a child dies, which the CLI would read as end of input.
-    //Only this handler: sa_stop below and the ones in ipc_install_handlers
-    //must keep sa_flags 0, or the sleep of the miner would not be
-    //interrupted by SIGUSR1 any more and the mining abort would stop working.
+    //SA_NOCLDSTOP: no SIGCHLD on pause and resume. SA_RESTART: a dead child does not break the CLI fgets. The other handlers keep flags 0
     sa_chld.sa_flags = SA_NOCLDSTOP | SA_RESTART;
     sigaction(SIGCHLD, &sa_chld, NULL);
 
@@ -164,11 +153,7 @@ int main(int argc, char *argv[]) {
     const char *initial_csv = (argc > 6) ? argv[6] : NULL;
     char log_buf[MAX_PATH_LEN + 128];
 
-    //a path that simply does not exist is not an error: the run starts from a
-    //new genesis block, like when no csv is passed at all. Every other failure
-    //(unreadable file, bad header, malformed or inconsistent blocks) must still
-    //stop the run, so we only skip the load on ENOENT and let csv_load report
-    //anything else
+    //a csv that does not exist is not an error, we start from a new genesis: every other problem stays fatal
     if (initial_csv != NULL && access(initial_csv, F_OK) != 0 && errno == ENOENT) {
         snprintf(log_buf, sizeof(log_buf), "Initial CSV %s does not exist: starting from a new genesis block", initial_csv);
         log_msg(LOG_INFO, log_buf);
@@ -225,7 +210,6 @@ int main(int argc, char *argv[]) {
         return FILE_ERROR;
     }
 
-
     int fds[MAX_NODES + MAX_MINERS + 1];
     if (ipc_create_all(p.num_nodes, p.num_miners, fds) != OK) {
         log_msg(LOG_ERROR, "Error creating the fifos");
@@ -234,10 +218,6 @@ int main(int argc, char *argv[]) {
         log_close();
         return IPC_ERROR;
     }
-
-
-
-
 
     char buf_nodes[16], buf_miner[16], buf_diff[16], buf_freq[16];
     snprintf(buf_nodes, sizeof(buf_nodes), "%d", p.num_nodes);
@@ -260,22 +240,23 @@ int main(int argc, char *argv[]) {
         char buf_idx[16];
         snprintf(buf_idx, sizeof(buf_idx), "%d", i);
 
-        char **args = malloc((6 + p.num_miners + 1) * sizeof(char*));
+        //5 fixed arguments, one per miner pid and the NULL: it fits on the stack
+        char pid_buf[MAX_MINERS][16];
+        char *args[6 + MAX_MINERS];
         args[0] = "node"; args[1] = buf_idx; args[2] = buf_nodes;
         args[3] = buf_miner; args[4] = BOOTSTRAP_CSV;
 
         int arg_idx = 5;
         for (size_t m = 0; m < g_nprocs; m++) {
             if (g_procs[m].role == ROLE_MINER) {
-                args[arg_idx] = malloc(16);
-                snprintf(args[arg_idx++], 16, "%d", g_procs[m].pid);
+                snprintf(pid_buf[arg_idx - 5], 16, "%d", g_procs[m].pid);
+                args[arg_idx] = pid_buf[arg_idx - 5];
+                arg_idx++;
             }
         }
         args[arg_idx] = NULL;
 
         pid_t pid = spawn_child("./node", args);
-        for (int m = 5; m < arg_idx; m++) free(args[m]);
-        free(args);
 
         if (pid > 0) {
             g_procs[g_nprocs++] = (proc_t){ pid, ROLE_NODE, i, 1 };
@@ -285,31 +266,28 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < p.num_clients; i++) {
         char buf_idx[16];
         snprintf(buf_idx, sizeof(buf_idx), "%d", i);
-        //the clients get the miner pids for the same reason the nodes do: it is
-        //the only way for them to notice that a miner is gone and stop sending
-        //transactions into a fifo nobody reads anymore
-        char **args = malloc((4 + p.num_miners + 1) * sizeof(char*));
+        //the clients need the miner pids to notice when a miner dies, like the nodes
+        char pid_buf[MAX_MINERS][16];
+        char *args[5 + MAX_MINERS];
         args[0] = "client"; args[1] = buf_idx;
         args[2] = buf_miner; args[3] = buf_freq;
 
         int arg_idx = 4;
         for (size_t m = 0; m < g_nprocs; m++) {
             if (g_procs[m].role == ROLE_MINER) {
-                args[arg_idx] = malloc(16);
-                snprintf(args[arg_idx++], 16, "%d", g_procs[m].pid);
+                snprintf(pid_buf[arg_idx - 4], 16, "%d", g_procs[m].pid);
+                args[arg_idx] = pid_buf[arg_idx - 4];
+                arg_idx++;
             }
         }
         args[arg_idx] = NULL;
 
         pid_t pid = spawn_child("./client", args);
-        for (int m = 4; m < arg_idx; m++) free(args[m]);
-        free(args);
 
         if (pid > 0) {
             g_procs[g_nprocs++] = (proc_t){ pid, ROLE_CLIENT, i, 1 };
         }
     }
-
 
     int cli_res = cli_run(g_procs, g_nprocs, &p);
     if (cli_res != OK) {
