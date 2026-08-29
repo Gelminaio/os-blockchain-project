@@ -10,6 +10,7 @@
 #include "ipc.h"
 #include "transaction.h"
 #include "block.h"
+#include "cli.h"
 
 static const char* role_to_string(role_t role) {
     switch (role) {
@@ -48,6 +49,15 @@ static int first_alive_node(const proc_t *tab, size_t n, int num_nodes) {
         }
     }
     return -1;
+}
+
+//a request that timed out leaves its late fragments in the inbox: the next one
+//would read those instead of its own answer, so we throw them away first
+static void drop_late_replies(int fd) {
+    msg_t old;
+    while (ipc_recv_nb(fd, &old) == OK) {
+        //nothing to do, the message belongs to a request nobody is waiting for
+    }
 }
 
 int cli_run(proc_t *tab, size_t n, const params_t *p) {
@@ -93,7 +103,9 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
         }
     }
 
-    if (ipc_open_inbox(ROLE_PARENT, 0, 0, &fd_inbox) != OK) {
+    //non blocking, or ipc_recv_timeout would stop inside read() and the CLI
+    //would hang forever waiting for a node that is paused or gone
+    if (ipc_open_inbox(ROLE_PARENT, 0, 1, &fd_inbox) != OK) {
         log_msg(LOG_ERROR, "Error opening the inbox FIFO of the parent");
         for (int k = 0; k < p->num_miners; k++) {
             close(fd_miner[k]);
@@ -252,6 +264,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             msg.payload_len = strlen(msg.payload);
 
             //send to block 0
+            drop_late_replies(fd_inbox);
             int node_idx = first_alive_node(tab, n, p->num_nodes);
             if (node_idx < 0) {
                 printf("No node is alive: the request was not sent.\n");
@@ -312,6 +325,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             snprintf(msg.payload, sizeof(msg.payload), "%s", filter);
             msg.payload_len = strlen(msg.payload);
 
+            drop_late_replies(fd_inbox);
             int node_idx = first_alive_node(tab, n, p->num_nodes);
             if (node_idx < 0) {
                 printf("No node is alive: the request was not sent.\n");
@@ -366,6 +380,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             snprintf(msg.payload, sizeof(msg.payload), "ALL");
             msg.payload_len = strlen(msg.payload);
 
+            drop_late_replies(fd_inbox);
             int node_idx = first_alive_node(tab, n, p->num_nodes);
             if (node_idx < 0) {
                 printf("No node is alive: the request was not sent.\n");

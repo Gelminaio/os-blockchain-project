@@ -248,9 +248,15 @@ static void handle_chain_request(const msg_t *m) {
     }
     else if (strncmp(m->payload, "HASH ", 5) == 0) {
         const block_t *b = chain_find_hash(&g_chain, m->payload + 5);
-        if (b) {
-            start_idx = b->index;
+        if (b == NULL) {
+            //an unknown hash used to leave start_idx at 0 and send the whole chain
+            rep.last = 1;
+            snprintf(rep.payload, sizeof(rep.payload), "ERR:Block not found");
+            rep.payload_len = strlen(rep.payload);
+            reply_to(m, &rep);
+            return;
         }
+        start_idx = b->index;
     } //ALL starts from 0
 
     //if chain is empty or the request is out of scale
