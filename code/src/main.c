@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/prctl.h>
 #include <time.h>
 #include "errors.h"
 #include "config.h"
@@ -80,11 +81,20 @@ static void reap_children(int signum) {
 }
 
 static pid_t spawn_child(const char *path, char *const argv[]) {
+    pid_t parent = getpid();
     pid_t pid = fork();
     if (pid < 0) {
         perror("fork");
         return -1;
     } else if (pid == 0) {
+        //a parent killed with SIGKILL cannot shut anybody down: this way the
+        //kernel sends us a SIGTERM when it dies and no orphan stays on the fifos
+#ifdef PR_SET_PDEATHSIG
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        if (getppid() != parent) {
+            _exit(0); //the parent died between the fork and the prctl
+        }
+#endif
         execv(path, argv);
         perror("execv");
         _exit(SYS_ERROR);

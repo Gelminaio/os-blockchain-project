@@ -21,10 +21,17 @@ static char mempool[MEMPOOL_SIZE][MAX_TX_LEN];
 static int mempool_count = 0;
 
 static void mempool_add(const char *txs) {
+    size_t len = strlen(txs);
+
+    //the callers validate the transaction first, so this never happens: but a
+    //cut transaction in the mempool would be worse than one dropped on purpose
+    if (len >= MAX_TX_LEN) {
+        log_msg(LOG_WARNING, "Transaction too long for the mempool, discarded");
+        return;
+    }
 
     if (mempool_count < MEMPOOL_SIZE) {
-        strncpy(mempool[mempool_count], txs, MAX_TX_LEN - 1);
-        mempool[mempool_count][MAX_TX_LEN - 1] = '\0';
+        memcpy(mempool[mempool_count], txs, len + 1);
         mempool_count ++;
     } else {
         log_msg(LOG_WARNING, "Mempool full, transaction discarded");
@@ -34,9 +41,9 @@ static void mempool_add(const char *txs) {
 static void mempool_remove(const char *tx) {
     for (int i = 0; i < mempool_count; i++) {
         if (strcmp(mempool[i], tx) == 0) {
-            for (int j = i; j < mempool_count - 1; j++) {
-                strcpy(mempool[j], mempool[j+1]);
-            }
+            //memmove and not a strcpy loop: source and destination are inside the
+            //same array and gcc warns about the overlap when it optimizes
+            memmove(mempool[i], mempool[i+1], (size_t)(mempool_count - 1 - i) * MAX_TX_LEN);
             mempool_count--;
             break;
         }
