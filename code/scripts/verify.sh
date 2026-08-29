@@ -40,6 +40,50 @@ file="$1"
             exit "$CSV_PARSE_ERROR"
         fi
 
+        # the transactions: same limits as block.c, at most 16 and under 128
+        # chars each, and the format is not checked on the genesis block
+        if [[ -z "$txs" ]]; then
+            echo "line $line_no: no transactions" >&2
+            exit "$CSV_PARSE_ERROR"
+        fi
+
+        tx_count=0
+        bad_format=0
+        rest="$txs"
+        while : ; do
+            if [[ "$rest" == *::* ]]; then
+                tx="${rest%%::*}"
+                next="${rest#*::}"
+                more=1
+            else
+                tx="$rest"
+                more=0
+            fi
+
+            (( tx_count++ ))
+
+            if [[ ${#tx} -ge 128 ]]; then
+                echo "line $line_no: transaction too long" >&2
+                exit "$CSV_PARSE_ERROR"
+            fi
+            if [[ $tx_count -gt 16 ]]; then
+                echo "line $line_no: too many transactions" >&2
+                exit "$CSV_PARSE_ERROR"
+            fi
+            if [[ "$idx" != "0000000000000000" ]] && \
+               [[ ! "$tx" =~ ^[A-Za-z0-9]+\ pays\ [A-Za-z0-9]+\ [1-9][0-9]*\ coins$ ]]; then
+                bad_format=1
+            fi
+
+            [[ $more -eq 0 ]] && break
+            rest="$next"
+        done
+
+        if [[ $bad_format -eq 1 ]]; then
+            echo "line $line_no: invalid transaction" >&2
+            [[ $first_error -eq 0 ]] && first_error="$INVALID_BLOCK"
+        fi
+
         # the merkle root
         expected=$(merkle_root_of "$txs")
         if [[ "$expected" != "$mroot" ]]; then

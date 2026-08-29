@@ -312,9 +312,15 @@ append_result_t chain_append(chain_t *c, const block_t *b) {
     }
 
 
-    //case 1: duplicate block
-    if (chain_find_hash(c, b_hash) != NULL) {
-        return APPEND_DUP;
+    //case 1: duplicate block. The chain is linear, block i sits at position i,
+    //so a copy can only be at its own index: looking there instead of hashing
+    //the whole chain makes loading a long csv linear instead of quadratic
+    const block_t *same_index = chain_find_index(c, b->index);
+    if (same_index != NULL) {
+        char same_hash[65];
+        if (block_hash(same_index, same_hash) == OK && strcmp(same_hash, b_hash) == 0) {
+            return APPEND_DUP;
+        }
     }
 
     const block_t *tip = chain_tip(c);
@@ -387,8 +393,8 @@ int csv_load(const char *path, chain_t *out) {
         return CSV_PARSE_ERROR;
     }
 
-    //replace \n with \0
-    buf[strcspn(buf, "\n")] = '\0';
+    //cut at \r too, so a file saved on windows is still readable
+    buf[strcspn(buf, "\r\n")] = '\0';
 
     //wrong header case
     if (strcmp(buf, CSV_HEADER) != 0) {
@@ -410,7 +416,13 @@ int csv_load(const char *path, chain_t *out) {
             return CSV_PARSE_ERROR;
         }
 
-        buf[strcspn(buf, "\n")] = '\0';
+        buf[strcspn(buf, "\r\n")] = '\0';
+
+        //an empty line is skipped and not an error, same as verify.sh
+        if (buf[0] == '\0') {
+            line_number++;
+            continue;
+        }
 
         block_t b;
         if (block_from_csv_row(buf, &b) != OK) {
