@@ -24,15 +24,25 @@ static const char* role_to_string(role_t role) {
     }
 }
 
-//the parent keeps every fifo open, so a send to a dead miner succeeds and the
-//transaction is lost: pick the next miner the process table still reports as
-//alive, or -1 if there is none left
+//a send to a dead miner works but the transaction is lost, so we look for one that is still alive
 static int next_alive_miner(const proc_t *tab, size_t n, size_t *cursor, int num_miners) {
     for (int k = 0; k < num_miners; k++) {
         int cand = (int)((*cursor + (size_t)k) % (size_t)num_miners);
         for (size_t i = 0; i < n; i++) {
             if (tab[i].role == ROLE_MINER && tab[i].idx == cand && tab[i].alive) {
                 *cursor = (size_t)cand + 1;
+                return cand;
+            }
+        }
+    }
+    return -1;
+}
+
+//the requests went only to node 0, so a dead node 0 meant just a timeout: we look for one that is alive
+static int first_alive_node(const proc_t *tab, size_t n, int num_nodes) {
+    for (int cand = 0; cand < num_nodes; cand++) {
+        for (size_t i = 0; i < n; i++) {
+            if (tab[i].role == ROLE_NODE && tab[i].idx == cand && tab[i].alive) {
                 return cand;
             }
         }
@@ -242,8 +252,13 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             msg.payload_len = strlen(msg.payload);
 
             //send to block 0
-            if (ipc_send(fd_node[0], &msg) != OK) {
-                printf("IPC error: impossible to send the request to node 0.\n");
+            int node_idx = first_alive_node(tab, n, p->num_nodes);
+            if (node_idx < 0) {
+                printf("No node is alive: the request was not sent.\n");
+                continue;
+            }
+            if (ipc_send(fd_node[node_idx], &msg) != OK) {
+                printf("IPC error: impossible to send the request to node %d.\n", node_idx);
                 continue;
             }
 
@@ -251,7 +266,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             msg_t rep;
             while (1) {
                 if (ipc_recv_timeout(fd_inbox, &rep, REPLY_TIMEOUT_S) != OK) {
-                    printf("Error or IPC timeout: node didn't respond in time.\n");
+                    printf("Error or IPC timeout: node %d didn't respond in time.\n", node_idx);
                     break;
                 }
 
@@ -297,8 +312,13 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             snprintf(msg.payload, sizeof(msg.payload), "%s", filter);
             msg.payload_len = strlen(msg.payload);
 
-            if (ipc_send(fd_node[0], &msg) != OK) {
-                printf("IPC error: impossible to send the request to node 0.\n");
+            int node_idx = first_alive_node(tab, n, p->num_nodes);
+            if (node_idx < 0) {
+                printf("No node is alive: the request was not sent.\n");
+                continue;
+            }
+            if (ipc_send(fd_node[node_idx], &msg) != OK) {
+                printf("IPC error: impossible to send the request to node %d.\n", node_idx);
                 continue;
             }
 
@@ -306,7 +326,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             msg_t rep;
             while (1) {
                 if (ipc_recv_timeout(fd_inbox, &rep, REPLY_TIMEOUT_S) != OK) {
-                    printf("Error or IPC timeout: node didn't respond in time.\n");
+                    printf("Error or IPC timeout: node %d didn't respond in time.\n", node_idx);
                     break;
                 }
 
@@ -346,8 +366,13 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             snprintf(msg.payload, sizeof(msg.payload), "ALL");
             msg.payload_len = strlen(msg.payload);
 
-            if (ipc_send(fd_node[0], &msg) != OK) {
-                printf("IPC error: impossible to send the request to node 0.\n");
+            int node_idx = first_alive_node(tab, n, p->num_nodes);
+            if (node_idx < 0) {
+                printf("No node is alive: the request was not sent.\n");
+                continue;
+            }
+            if (ipc_send(fd_node[node_idx], &msg) != OK) {
+                printf("IPC error: impossible to send the request to node %d.\n", node_idx);
                 continue;
             }
 
@@ -358,7 +383,7 @@ int cli_run(proc_t *tab, size_t n, const params_t *p) {
             msg_t rep;
             while (1) {
                 if (ipc_recv_timeout(fd_inbox, &rep, REPLY_TIMEOUT_S) != OK) {
-                    printf("Error or IPC timeout: node didn't respond in time.\n");
+                    printf("Error or IPC timeout: node %d didn't respond in time.\n", node_idx);
                     break;
                 }
 
