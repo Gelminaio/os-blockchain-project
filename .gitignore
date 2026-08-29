@@ -22,3 +22,5 @@ code/compile_commands.json
 
 # configurazione locale degli IDE
 .idea/
+# configurazione locale degli editor
+code/.clangd
