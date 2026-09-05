@@ -1,10 +1,10 @@
 # OS Blockchain Simulation
-
+**Status:** complete - No further development is planned.
 ![C](https://img.shields.io/badge/C-%2300599C.svg?style=for-the-badge&logo=c&logoColor=white)
 ![Bash](https://img.shields.io/badge/Bash-%23121011.svg?style=for-the-badge&logo=gnu-bash&logoColor=white)
 ![Ubuntu](https://img.shields.io/badge/Ubuntu_24.04-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
-A multi-process blockchain simulation developed for the Operating Systems course (A.Y. 2025/2026) within the Bachelor's Degree in Information, Communications and Electronics Engineering at the University of Trento.
+A multi-process blockchain simulation developed for the Operating Systems course (A.Y. 2025/2026) within the Bachelor's Degree in Information, Communications and Electronics Engineering at the University of Trento. Graded 10/10.
 
 ## Authors
 
